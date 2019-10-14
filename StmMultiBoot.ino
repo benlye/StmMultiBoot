@@ -11,13 +11,8 @@
 #define SIGNATURE_3		0x97
 #define SIGNATURE_4		0x02
 
-
-#define STM32F10X_CL
-
-#include "stm32f10x.h"
-
 #include "stk500.h"
-#include "stm32f10x_flash.h"
+// #include "stm32_flash.h"
 
 #define OPTIBOOT_MAJVER 4
 #define OPTIBOOT_MINVER 5
@@ -54,7 +49,7 @@ void RCC_DeInit(void)
   RCC->APB1ENR = 0x00000000;
 
   /* Set HSION bit */
-  RCC->CR |= (u32)0x00000001;
+  RCC->CR |= (uint32_t)0x00000001;
 
   /* Reset SW[1:0], HPRE[3:0], PPRE1[2:0], PPRE2[2:0], ADCPRE[1:0] and MCO[2:0] bits*/
   RCC->CFGR &= 0xF8FF0000;
@@ -78,10 +73,33 @@ void disableInterrupts()
 	NVIC_DisableIRQ(USART1_IRQn) ;
 	NVIC_DisableIRQ(USART2_IRQn) ;
 	NVIC_DisableIRQ(USART3_IRQn) ;
-	NVIC_DisableIRQ(TIM1_BRK_IRQn) ;
-	NVIC_DisableIRQ(TIM1_UP_IRQn) ;
-	NVIC_DisableIRQ(TIM1_TRG_COM_IRQn) ;
-	NVIC_DisableIRQ(TIM1_CC_IRQn) ;
+
+	// Disable STM32F103-only interrupts
+	#ifdef STM32F103xB
+		NVIC_DisableIRQ(TIM1_BRK_IRQn) ;
+		NVIC_DisableIRQ(TIM1_CC_IRQn) ;
+		NVIC_DisableIRQ(TIM1_UP_IRQn) ;
+		NVIC_DisableIRQ(TIM1_TRG_COM_IRQn) ;
+
+	#endif
+
+	// Disable STM32F303-only interrupts
+	#ifdef STM32F303xC
+		NVIC_DisableIRQ(TIM1_BRK_TIM15_IRQn) ;
+		NVIC_DisableIRQ(TIM1_UP_TIM16_IRQn) ;
+		NVIC_DisableIRQ(TIM1_TRG_COM_TIM17_IRQn) ;
+		NVIC_DisableIRQ(TIM1_CC_IRQn) ;
+		NVIC_DisableIRQ(TIM6_DAC_IRQn) ;
+		NVIC_DisableIRQ(TIM7_IRQn) ;
+		NVIC_DisableIRQ(TIM8_BRK_IRQn) ;
+		NVIC_DisableIRQ(TIM8_CC_IRQn) ;
+		NVIC_DisableIRQ(TIM8_UP_IRQn) ;
+		NVIC_DisableIRQ(TIM8_TRG_COM_IRQn) ;
+		NVIC_DisableIRQ(ADC4_IRQn) ;
+		NVIC_DisableIRQ(UART4_IRQn) ;
+		NVIC_DisableIRQ(UART5_IRQn) ;
+	#endif
+
 	NVIC_DisableIRQ(TIM3_IRQn) ;
 	NVIC_DisableIRQ(TIM4_IRQn) ;
 	NVIC_DisableIRQ(ADC1_2_IRQn) ;
@@ -110,13 +128,25 @@ static void executeApp()
 		USART2->BRR = 0 ;
 		USART3->CR1 = 0 ;
 		USART3->BRR = 0 ;
-		(void) USART2->SR ;
-		(void) USART2->DR ;
-		(void) USART1->SR ;
-		(void) USART1->DR ;
-		USART1->SR = 0 ;
-		USART2->SR = 0 ;
-		USART3->SR = 0 ;
+		#ifdef STM32F103xB
+			(void) USART2->SR ;
+			(void) USART2->DR ;
+			(void) USART1->SR ;
+			(void) USART1->DR ;
+			USART1->SR = 0 ;
+			USART2->SR = 0 ;
+			USART3->SR = 0 ;
+		#endif
+		#ifdef STM32F303xC
+			(void) USART2->ISR ;
+			(void) USART2->RDR ;
+			(void) USART1->ISR ;
+			(void) USART1->RDR ;
+			USART1->ISR = 0 ;
+			USART2->ISR = 0 ;
+			USART3->ISR = 0 ;
+		#endif
+
 
 		RCC->APB1ENR &= ~RCC_APB1ENR_USART2EN ;		// Disable clock
 		RCC->APB1ENR &= ~RCC_APB1ENR_USART3EN ;		// Disable clock
@@ -156,19 +186,35 @@ static void executeApp()
 
 static uint16_t test0()
 {
-	if ( USART2->SR & USART_SR_RXNE )
-	{
-		return USART2->DR ;
-	}
+	#ifdef STM32F103xB
+		if ( USART2->SR & USART_SR_RXNE )
+		{
+			return USART2->DR ;
+		}
+	#endif
+	#ifdef STM32F303xC
+		if ( USART2->ISR & USART_ISR_RXNE )
+		{
+			return USART2->RDR ;
+		}
+	#endif
 	return 0xFFFF ;
 }
 
 static uint16_t test1()
 {
-	if ( USART1->SR & USART_SR_RXNE )
-	{
-		return USART1->DR ;
-	}
+	#ifdef STM32F103xB
+		if ( USART1->SR & USART_SR_RXNE )
+		{
+			return USART1->DR ;
+		}
+	#endif
+	#ifdef STM32F303xC
+		if ( USART1->ISR & USART_ISR_RXNE )
+		{
+			return USART1->RDR ;
+		}
+	#endif
 	return 0xFFFF ;
 }
 
@@ -257,7 +303,7 @@ void setup()
 {
 	serialInit() ;
 	start_timer2() ;//0.5us
-	FLASH_Unlock() ;
+	HAL_FLASH_Unlock() ;
 	GPIOA->BSRR = 0x000000F1 ;
 	GPIOA->CRL = GPIOA->CRL & 0x0000FF00 | 0x88880028 ;	// LED and inputs
 	
@@ -456,15 +502,15 @@ void loader( uint32_t check )
 					if ( ((uint32_t)memAddress & 0x000003FF) == 0 )
 					{
 						// At page start so erase it
-						FLASH_ClearFlag(FLASH_FLAG_EOP|FLASH_FLAG_PGERR|FLASH_FLAG_WRPRTERR);
-						FLASH_ErasePage( (uint32_t)memAddress ) ;
+						//FLASH_ClearFlag(FLASH_FLAG_EOP|FLASH_FLAG_PGERR|FLASH_FLAG_WRPERR);
+						//FLASH_ErasePage( (uint32_t)memAddress ) ;
 					}
 		      bufPtr = Buff;
 					while ( count )
 					{
 						data = *bufPtr++ ;
 						data |= *bufPtr++ << 8 ;
-						FLASH_ProgramHalfWord( (uint32_t)memAddress, data ) ;
+						//FLASH_ProgramHalfWord( (uint32_t)memAddress, data ) ;
 						memAddress += 2 ;
 						count -= 1 ;
 					}
@@ -554,5 +600,3 @@ void loop()
 		}
 	}
 }
-
-
