@@ -15,6 +15,12 @@
 #define OPTIBOOT_MAJVER 4
 #define OPTIBOOT_MINVER 5
 
+// Structure for configuring GPIO pins
+GPIO_InitTypeDef GPIO_InitStruct;
+
+// Structure for erasing flash pages
+FLASH_EraseInitTypeDef EraseInitStruct;
+
 uint32_t ResetReason ;
 uint32_t LongCount ;
 uint8_t Buff[512] ;
@@ -327,14 +333,32 @@ static void serialInit()
 		__HAL_RCC_AFIO_CLK_ENABLE() ;
 	#endif
 
-  // USART2 - TX=PA2, RX=PA9 - only RX is used 
-  // Set PA9 as alternate function output ???
-  GPIOA->CRH = GPIOA->CRH & 0xFFFFFF0F | 0x00000090 ;	// PA9
-	
-  // USART3 - TX=PB10, RX=PB11 - only TX is used
-  // Set PB10 as alternate function output ???
-	GPIOB->CRH = GPIOB->CRH & 0xFFFFF0FF | 0x00000900 ;	// PB10
+	// USART2 - TX=PA2, RX=PA9 - only RX is used 
+	// Configure PA9 as alternate function USART2_RX
+	GPIO_InitStruct.Pin = GPIO_PIN_9;
+	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+	GPIO_InitStruct.Pull = GPIO_PULLUP;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
 
+	#ifdef STM32F303xC
+		GPIO_InitStruct.Alternate = GPIO_AF7_USART2;
+	#endif
+
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+
+	// USART3 - TX=PB10, RX=PB11 - only TX is used
+  	// Configure PB10 as alternate function USART3_TX
+	GPIO_InitStruct.Pin = GPIO_PIN_10;
+	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+	GPIO_InitStruct.Pull = GPIO_PULLUP;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
+
+	#ifdef STM32F303xC
+		GPIO_InitStruct.Alternate = GPIO_AF7_USART3;
+	#endif
+
+	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
 	USART1->BRR = 72000000 / 57600 ;
 	USART1->CR1 = 0x200C ;
@@ -351,25 +375,45 @@ static void serialInit()
 
 void setup()
 {
-	serialInit() ;
-	start_timer2() ;//0.5us
-	HAL_FLASH_Unlock() ;
-  // Set PA0, 4-7 (HIGH)
-	GPIOA->BSRR = 0x000000F1 ;
+	// Initialize the STM32 HAL
+	HAL_Init();
 
-  // Configure pins PA0, 4-7 as inputs, PA1 as output (LED)
-	GPIOA->CRL = GPIOA->CRL & 0x0000FF00 | 0x88880028 ;
+	// Initialize the USARTs
+	serialInit() ;
+
+	// Start the timer used to blink the LED rapidly
+	start_timer2() ; //0.5us
+
+	// Unlock the flash
+	HAL_FLASH_Unlock() ;
+
+	// Set PA0, 4-7 (HIGH)
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0 | GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7, GPIO_PIN_SET);
+
+	// Configure pins PA0, 4-7 as inputs
+	GPIO_InitStruct.Pin = GPIO_PIN_0 | GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7;
+	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+	GPIO_InitStruct.Pull = GPIO_PULLUP;
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+	// Configure PA1 as output (LED)
+	GPIO_InitStruct.Pin = GPIO_PIN_1;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 	
 	// Configure PB1 and PB3 as output
-	GPIOB->CRL = GPIOB->CRL & 0xFFFF0F0F | 0x00002020 ;
+	GPIO_InitStruct.Pin = GPIO_PIN_1 | GPIO_PIN_3;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  // Clear PB3 (LOW)
-	GPIOB->BRR = 0x00000008 ; // 0b1000
-
-  // Set PB1 (HIGH)
-	GPIOB->BSRR = 0x00000002 ; // 0b0010
-
-
+  	// Clear PB3 (LOW)
+  	GPIOB->BRR = 0x00000008 ; // 0b1000
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
+	
+  	// Set PB1 (HIGH)
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
 }
 
 void verifySpace()
@@ -558,8 +602,17 @@ void loader( uint32_t check )
 				{
 					if ( ((uint32_t)memAddress & 0x000003FF) == 0 )
 					{
+						uint32_t SectorError = 0;
 						// At page start so erase it
-						//FLASH_ClearFlag(FLASH_FLAG_EOP|FLASH_FLAG_PGERR|FLASH_FLAG_WRPERR);
+						__HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_EOP | FLASH_FLAG_WRPERR | FLASH_FLAG_PGERR);
+
+						EraseInitStruct.TypeErase = FLASH_TYPEERASE_PAGES;
+						EraseInitStruct.PageAddress = (uint32_t)memAddress;
+						EraseInitStruct.NbPages = 1;
+
+						HAL_FLASHEx_Erase(&EraseInitStruct, &SectorError);
+
+						//FLASH_PageErase((uint32_t)memAddress );
 						//FLASH_ErasePage( (uint32_t)memAddress ) ;
 					}
 		      bufPtr = Buff;
@@ -567,7 +620,7 @@ void loader( uint32_t check )
 					{
 						data = *bufPtr++ ;
 						data |= *bufPtr++ << 8 ;
-						//FLASH_ProgramHalfWord( (uint32_t)memAddress, data ) ;
+						HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, (uint32_t)memAddress, data);
 						memAddress += 2 ;
 						count -= 1 ;
 					}
