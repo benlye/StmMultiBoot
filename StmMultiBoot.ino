@@ -343,9 +343,8 @@ static void serialInit()
 
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-
 	// USART3 - TX=PB10, RX=PB11 - only TX is used
-  	// Configure PB10 as alternate function USART3_TX
+	// Configure PB10 as alternate function USART3_TX
 	GPIO_InitStruct.Pin = GPIO_PIN_10;
 	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
 	GPIO_InitStruct.Pull = GPIO_PULLUP;
@@ -405,11 +404,11 @@ void setup()
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
 	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  	// Clear PB3 (LOW)
-  	GPIOB->BRR = 0x00000008 ; // 0b1000
+	// Clear PB3 (LOW)
+	GPIOB->BRR = 0x00000008 ; // 0b1000
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
 	
-  	// Set PB1 (HIGH)
+	// Set PB1 (HIGH)
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
 }
 
@@ -419,7 +418,6 @@ void verifySpace()
 	{
 		NotSynced = 1 ;
 		return ;
-		
 	}
 	putch(STK_INSYNC);
 }
@@ -430,7 +428,7 @@ void bgetNch(uint8_t count)
 	{
 		getch() ;
 	} while (--count) ;
-  	verifySpace() ;
+	verifySpace() ;
 }
 
 void loader( uint32_t check )
@@ -538,17 +536,17 @@ void loader( uint32_t check )
 				putch(0x03) ;
 			}
 		}
-    	else if(ch == STK_SET_DEVICE)
+		else if(ch == STK_SET_DEVICE)
 		{
 			// SET DEVICE is ignored
 			bgetNch(20) ;
 		}
 	    else if(ch == STK_SET_DEVICE_EXT)
 		{
-    		// SET DEVICE EXT is ignored
-      		bgetNch(5);
-    	}
-    	else if(ch == STK_LOAD_ADDRESS)
+			// SET DEVICE EXT is ignored
+			bgetNch(5);
+		}
+		else if(ch == STK_LOAD_ADDRESS)
 		{
 			// LOAD ADDRESS
 			uint16_t newAddress ;
@@ -583,7 +581,7 @@ void loader( uint32_t check )
 			{
 				*bufPtr++ = getch() ;
 			}
-    		 while (--count) ;
+			while (--count) ;
 			if ( length & 1 )
 			{
 				*bufPtr = 0xFF ;
@@ -593,7 +591,7 @@ void loader( uint32_t check )
 			count /= 2 ;
 			memAddress = (uint8_t *)(address + 0x08000000) ;
 
-      		if ( (uint32_t)memAddress < 0x08020000 )
+			if ( (uint32_t)memAddress < 0x08020000 )
 			{
 				// Read command terminator, start reply
 				verifySpace();
@@ -611,9 +609,6 @@ void loader( uint32_t check )
 						EraseInitStruct.NbPages = 1;
 
 						HAL_FLASHEx_Erase(&EraseInitStruct, &SectorError);
-
-						//FLASH_PageErase((uint32_t)memAddress );
-						//FLASH_ErasePage( (uint32_t)memAddress ) ;
 					}
 					bufPtr = Buff;
 					while ( count )
@@ -628,10 +623,10 @@ void loader( uint32_t check )
 			}
 			else
 			{
-      			verifySpace();
+				verifySpace();
 			}
-    	}
-    	else if(ch == STK_READ_PAGE)
+		}
+		else if(ch == STK_READ_PAGE)
 	  	{
 			uint16_t length ;
 			uint8_t xlen ;
@@ -639,7 +634,7 @@ void loader( uint32_t check )
 			memAddress = (uint8_t *)(address + 0x08000000) ;
 			// READ PAGE - we only read flash
 			xlen = getch() ;			/* getlen() */
-      		length = getch() | (xlen << 8 ) ;
+			length = getch() | (xlen << 8 ) ;
 			getch() ;
 		    verifySpace() ;
 	    	do
@@ -663,16 +658,12 @@ void loader( uint32_t check )
 				putch(SIGNATURE_1) ;
 				putch(SIGNATURE_2) ;
 			}
-    	}
-    	else if (ch == STK_LEAVE_PROGMODE)
-		{ /* 'Q' */
-			// Adaboot no-wait mod
-
-			//      watchdogConfig(WATCHDOG_16MS);
-
+		}
+		else if (ch == STK_LEAVE_PROGMODE)
+		{
 			verifySpace() ;
-    	}
-    	else
+		}
+		else
 		{
 			// This covers the response to commands like STK_ENTER_PROGMODE
 			verifySpace() ;
@@ -681,7 +672,7 @@ void loader( uint32_t check )
 		{
 			continue ;
 		}
-    	putch(STK_OK);
+		putch(STK_OK);
 	}
 }
 
@@ -699,7 +690,7 @@ void loop()
 	{
 		if ( TIM2->SR & TIM_SR_UIF )
 		{
-  		TIM2->SR &= ~TIM_SR_UIF ;
+			TIM2->SR &= ~TIM_SR_UIF ;
 			if ( ++LongCount > 4 )
 			{
 				GPIOA->ODR ^= 0x0002 ;
