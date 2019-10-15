@@ -34,38 +34,38 @@ static void start_timer2()
 
 void RCC_DeInit(void)
 {
-  /* Disable APB2 Peripheral Reset */
-  RCC->APB2RSTR = 0x00000000;
+	/* Disable APB2 Peripheral Reset */
+	RCC->APB2RSTR = 0x00000000;
 
-  /* Disable APB1 Peripheral Reset */
-  RCC->APB1RSTR = 0x00000000;
+	/* Disable APB1 Peripheral Reset */
+	RCC->APB1RSTR = 0x00000000;
 
-  /* FLITF and SRAM Clock ON */
-  RCC->AHBENR = 0x00000014;
+	/* FLITF and SRAM Clock ON */
+	RCC->AHBENR = 0x00000014;
 
-  /* Disable APB2 Peripheral Clock */
-  RCC->APB2ENR = 0x00000000;
+	/* Disable APB2 Peripheral Clock */
+	RCC->APB2ENR = 0x00000000;
 
-  /* Disable APB1 Peripheral Clock */
-  RCC->APB1ENR = 0x00000000;
+	/* Disable APB1 Peripheral Clock */
+	RCC->APB1ENR = 0x00000000;
 
-  /* Set HSION bit */
-  RCC->CR |= (uint32_t)0x00000001;
+	/* Set HSION bit */
+	RCC->CR |= (uint32_t)0x00000001;
 
-  /* Reset SW[1:0], HPRE[3:0], PPRE1[2:0], PPRE2[2:0], ADCPRE[1:0] and MCO[2:0] bits*/
-  RCC->CFGR &= 0xF8FF0000;
-  
-  /* Reset HSEON, CSSON and PLLON bits */
-  RCC->CR &= 0xFEF6FFFF;
+	/* Reset SW[1:0], HPRE[3:0], PPRE1[2:0], PPRE2[2:0], ADCPRE[1:0] and MCO[2:0] bits*/
+	RCC->CFGR &= 0xF8FF0000;
 
-  /* Reset HSEBYP bit */
-  RCC->CR &= 0xFFFBFFFF;
+	/* Reset HSEON, CSSON and PLLON bits */
+	RCC->CR &= 0xFEF6FFFF;
 
-  /* Reset PLLSRC, PLLXTPRE, PLLMUL[3:0] and USBPRE bits */
-  RCC->CFGR &= 0xFF80FFFF;
+	/* Reset HSEBYP bit */
+	RCC->CR &= 0xFFFBFFFF;
 
-  /* Disable all interrupts */
-  RCC->CIR = 0x009F0000;
+	/* Reset PLLSRC, PLLXTPRE, PLLMUL[3:0] and USBPRE bits */
+	RCC->CFGR &= 0xFF80FFFF;
+
+	/* Disable all interrupts */
+	RCC->CIR = 0x009F0000;
 }
 
 void disableInterrupts()
@@ -108,14 +108,14 @@ void disableInterrupts()
 
 static void executeApp()
 {
+
+	// Disable all peripheral clocks
+	// Disable used PLL
+	// Disable interrupts
+	// Clear pending interrupts
+
 	// Expected at 0x08002000
 	uint32_t *p ;
-
-// Disable all peripheral clocks
-// Disable used PLL
-// Disable interrupts
-// Clear pending interrupts
-
 	p = (uint32_t *) 0x08002000 ;
 
 	if ( *p == 0x20005000 )
@@ -165,18 +165,18 @@ static void executeApp()
 		SysTick->VAL = 0 ;
 	
 		asm(" mov.w	r1, #134217728");	// 0x8000000
-  	asm(" add.w	r1, #8192");			// 0x2000
-	
-		asm(" movw	r0, #60680");			// 0xED08
-  	asm(" movt	r0, #57344");			// 0xE000
-	  asm(" str	r1, [r0, #0]");			// Set the VTOR
-	
-  	asm("ldr	r0, [r1, #0]");			// Stack pointer value
-	  asm("msr msp, r0");						// Set it
-  	asm("ldr	r0, [r1, #4]");			// Reset address
-	  asm("mov.w	r1, #1");
-  	asm("orr		r0, r1");					// Set lsbit
-	  asm("bx r0");									// Execute application
+		asm(" add.w	r1, #8192");		// 0x2000
+
+		asm(" movw	r0, #60680");		// 0xED08
+		asm(" movt	r0, #57344");		// 0xE000
+		asm(" str	r1, [r0, #0]");		// Set the VTOR
+
+		asm("ldr	r0, [r1, #0]");		// Stack pointer value
+		asm("msr msp, r0");				// Set it
+		asm("ldr	r0, [r1, #4]");		// Reset address
+		asm("mov.w	r1, #1");
+		asm("orr		r0, r1");		// Set lsbit
+		asm("bx r0");					// Execute application
 	}
 }
 
@@ -415,33 +415,33 @@ void setup()
 
 void verifySpace()
 {
-  if ( getch() != CRC_EOP)
+	if (getch() != CRC_EOP)
 	{
 		NotSynced = 1 ;
 		return ;
 		
-  }
-  putch(STK_INSYNC);
+	}
+	putch(STK_INSYNC);
 }
 
 void bgetNch(uint8_t count)
 {
-  do
+	do
 	{
 		getch() ;
 	} while (--count) ;
-  verifySpace() ;
+  	verifySpace() ;
 }
 
 void loader( uint32_t check )
 {
-  uint8_t ch ;
-  uint8_t GPIOR0 ;
+	uint8_t ch ;
+	uint8_t GPIOR0 ;
 	uint32_t address = 0 ;
-  uint8_t lastCh ;
+	uint8_t lastCh ;
 
 	ResetReason = RCC->CSR ;
-  RCC->CSR |= RCC_CSR_RMVF ;
+	RCC->CSR |= RCC_CSR_RMVF ;
 	if ( ResetReason & RCC_CSR_SFTRSTF )
 	{
 		check = 0 ;	// Stay in bootloader
@@ -492,6 +492,7 @@ void loader( uint32_t check )
 				}
 				lastCh = ch ; 
 			}
+
 			data = test1() ;
 			if ( data != 0xFFFF )
 			{
@@ -504,83 +505,85 @@ void loader( uint32_t check )
 				}
 				lastCh = ch ; 
 			}
+
 			IWDG->KR = 0xAAAA ;		// reload
+
 			if ( TIM2->SR & TIM_SR_UIF )
 			{
-  			TIM2->SR &= ~TIM_SR_UIF ;
+	  			TIM2->SR &= ~TIM_SR_UIF ;
 				GPIOA->ODR ^= 0x0002 ;
 			}
 		}
 		
-    /* get character from UART */
-    ch = getch() ;
-    if(ch == STK_GET_PARAMETER)
+		/* get character from UART */
+		ch = getch() ;
+		if(ch == STK_GET_PARAMETER)
 		{
-      GPIOR0 = getch() ;
-      verifySpace() ;
-      if (GPIOR0 == 0x82)
+			GPIOR0 = getch() ;
+			verifySpace() ;
+			if (GPIOR0 == 0x82)
 			{
 				putch(OPTIBOOT_MINVER) ;
-      }
+			}
 			else if (GPIOR0 == 0x81)
 			{
-	  		putch(OPTIBOOT_MAJVER) ;
-      }
+				putch(OPTIBOOT_MAJVER) ;
+			}
 			else
 			{
-	/*
-	 * GET PARAMETER returns a generic 0x03 reply for
-         * other parameters - enough to keep Avrdude happy
-	 */
+				/*
+				* GET PARAMETER returns a generic 0x03 reply for
+				* other parameters - enough to keep Avrdude happy
+				*/
 				putch(0x03) ;
-      }
+			}
 		}
-    else if(ch == STK_SET_DEVICE)
+    	else if(ch == STK_SET_DEVICE)
 		{
-      // SET DEVICE is ignored
-      bgetNch(20) ;
-    }
-    else if(ch == STK_SET_DEVICE_EXT)
+			// SET DEVICE is ignored
+			bgetNch(20) ;
+		}
+	    else if(ch == STK_SET_DEVICE_EXT)
 		{
-      // SET DEVICE EXT is ignored
-      bgetNch(5);
-    }
-    else if(ch == STK_LOAD_ADDRESS)
+    		// SET DEVICE EXT is ignored
+      		bgetNch(5);
+    	}
+    	else if(ch == STK_LOAD_ADDRESS)
 		{
-      // LOAD ADDRESS
-      uint16_t newAddress ;
-      newAddress = getch() ;
-      newAddress = (newAddress & 0xff) | (getch() << 8);
-      address = newAddress ; // Convert from word address to byte address
-      address <<= 1 ;
-      verifySpace() ;
-    }
-    else if(ch == STK_UNIVERSAL)
+			// LOAD ADDRESS
+			uint16_t newAddress ;
+			newAddress = getch() ;
+			newAddress = (newAddress & 0xff) | (getch() << 8);
+			address = newAddress ; // Convert from word address to byte address
+			address <<= 1 ;
+			verifySpace() ;
+		}
+		else if(ch == STK_UNIVERSAL)
 		{
-      // UNIVERSAL command is ignored
-      bgetNch(4) ;
-      putch(0x00) ;
-    }
-    else if(ch == STK_PROG_PAGE)
+			// UNIVERSAL command is ignored
+			bgetNch(4) ;
+			putch(0x00) ;
+		}
+		else if(ch == STK_PROG_PAGE)
 		{
-      // PROGRAM PAGE - we support flash programming only, not EEPROM
-      uint8_t *bufPtr;
-      uint16_t addrPtr;
-  		uint16_t length ;
-  		uint16_t count ;
-  		uint16_t data ;
+			// PROGRAM PAGE - we support flash programming only, not EEPROM
+			uint8_t *bufPtr;
+			uint16_t addrPtr;
+			uint16_t length ;
+			uint16_t count ;
+			uint16_t data ;
 			uint8_t *memAddress ;
-      length = getch() << 8 ;			/* getlen() */
-      length |= getch() ;
-      getch() ;	// discard flash/eeprom byte
+			length = getch() << 8 ;			/* getlen() */
+			length |= getch() ;
+			getch() ;	// discard flash/eeprom byte
 			// While that is going on, read in page contents
 			count = length ;
-      bufPtr = Buff;
-      do
+			bufPtr = Buff;
+			do
 			{
 				*bufPtr++ = getch() ;
 			}
-      while (--count) ;
+    		 while (--count) ;
 			if ( length & 1 )
 			{
 				*bufPtr = 0xFF ;
@@ -590,10 +593,10 @@ void loader( uint32_t check )
 			count /= 2 ;
 			memAddress = (uint8_t *)(address + 0x08000000) ;
 
-      if ( (uint32_t)memAddress < 0x08020000 )
+      		if ( (uint32_t)memAddress < 0x08020000 )
 			{
-      	// Read command terminator, start reply
-      	verifySpace();
+				// Read command terminator, start reply
+				verifySpace();
 
 				if ( (uint32_t)memAddress >= 0x08002000 )
 				{
@@ -612,7 +615,7 @@ void loader( uint32_t check )
 						//FLASH_PageErase((uint32_t)memAddress );
 						//FLASH_ErasePage( (uint32_t)memAddress ) ;
 					}
-		      bufPtr = Buff;
+					bufPtr = Buff;
 					while ( count )
 					{
 						data = *bufPtr++ ;
@@ -625,62 +628,60 @@ void loader( uint32_t check )
 			}
 			else
 			{
-      	verifySpace();
+      			verifySpace();
 			}
-    }
-    else if(ch == STK_READ_PAGE)
-	  {
-		  uint16_t length ;
+    	}
+    	else if(ch == STK_READ_PAGE)
+	  	{
+			uint16_t length ;
 			uint8_t xlen ;
 			uint8_t *memAddress ;
 			memAddress = (uint8_t *)(address + 0x08000000) ;
-      // READ PAGE - we only read flash
-      xlen = getch() ;			/* getlen() */
-      length = getch() | (xlen << 8 ) ;
+			// READ PAGE - we only read flash
+			xlen = getch() ;			/* getlen() */
+      		length = getch() | (xlen << 8 ) ;
 			getch() ;
-      verifySpace() ;
-	    do
+		    verifySpace() ;
+	    	do
 			{
 				putch( *memAddress++) ;
 			}
-	    while (--length) ;
-
-			
+	    	while (--length) ;
 		}
-    else if(ch == STK_READ_SIGN)
+	    else if(ch == STK_READ_SIGN)
 		{
-      // READ SIGN - return what Avrdude wants to hear
-      verifySpace() ;
-      putch(SIGNATURE_0) ;
+			// READ SIGN - return what Avrdude wants to hear
+			verifySpace() ;
+			putch(SIGNATURE_0) ;
 			if ( Port )
 			{
-	      putch(SIGNATURE_3) ;
-  	    putch(SIGNATURE_4) ;
+				putch(SIGNATURE_3) ;
+				putch(SIGNATURE_4) ;
 			}
 			else
 			{
-	      putch(SIGNATURE_1) ;
-  	    putch(SIGNATURE_2) ;
+				putch(SIGNATURE_1) ;
+				putch(SIGNATURE_2) ;
 			}
-    }
-    else if (ch == STK_LEAVE_PROGMODE)
+    	}
+    	else if (ch == STK_LEAVE_PROGMODE)
 		{ /* 'Q' */
-      // Adaboot no-wait mod
+			// Adaboot no-wait mod
 
-//      watchdogConfig(WATCHDOG_16MS);
-      
+			//      watchdogConfig(WATCHDOG_16MS);
+
 			verifySpace() ;
-    }
-    else
+    	}
+    	else
 		{
-      // This covers the response to commands like STK_ENTER_PROGMODE
-      verifySpace() ;
-    }
+			// This covers the response to commands like STK_ENTER_PROGMODE
+			verifySpace() ;
+		}
 		if ( NotSynced )
 		{
 			continue ;
 		}
-    putch(STK_OK);
+    	putch(STK_OK);
 	}
 }
 
@@ -693,7 +694,7 @@ void loop()
 
 	loader(0) ;
 	
-// The next bit not really needed as loader(0) doesn't return	
+	// The next bit not really needed as loader(0) doesn't return	
 	for(;;)
 	{
 		if ( TIM2->SR & TIM_SR_UIF )
