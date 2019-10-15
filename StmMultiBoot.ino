@@ -327,10 +327,14 @@ static void serialInit()
 		__HAL_RCC_AFIO_CLK_ENABLE() ;
 	#endif
 
-	GPIOA->CRH = GPIOA->CRH & 0xFFFFFF0F | 0x00000090 ;	// PA9
-	// USART2 TX is PA2, only Rx used
-	// USART3 TX is PB10, only Tx used
+  // USART2 - TX=PA2, RX=PA9 - only RX is used 
+  // Set PA9 as alternate function output ???
+  GPIOA->CRH = GPIOA->CRH & 0xFFFFFF0F | 0x00000090 ;	// PA9
+	
+  // USART3 - TX=PB10, RX=PB11 - only TX is used
+  // Set PB10 as alternate function output ???
 	GPIOB->CRH = GPIOB->CRH & 0xFFFFF0FF | 0x00000900 ;	// PB10
+
 
 	USART1->BRR = 72000000 / 57600 ;
 	USART1->CR1 = 0x200C ;
@@ -350,14 +354,21 @@ void setup()
 	serialInit() ;
 	start_timer2() ;//0.5us
 	HAL_FLASH_Unlock() ;
+  // Set PA0, 4-7 (HIGH)
 	GPIOA->BSRR = 0x000000F1 ;
-	GPIOA->CRL = GPIOA->CRL & 0x0000FF00 | 0x88880028 ;	// LED and inputs
-	
-	// Input with pullup, 1000B, and set the ODR bit
 
-	GPIOB->CRL = GPIOB->CRL & 0xFFFF0F0F | 0x00002020 ;	// PB1 and PB3, invert controls
-	GPIOB->BRR = 0x00000008 ;
-	GPIOB->BSRR = 0x00000002 ;
+  // Configure pins PA0, 4-7 as inputs, PA1 as output (LED)
+	GPIOA->CRL = GPIOA->CRL & 0x0000FF00 | 0x88880028 ;
+	
+	// Configure PB1 and PB3 as output
+	GPIOB->CRL = GPIOB->CRL & 0xFFFF0F0F | 0x00002020 ;
+
+  // Clear PB3 (LOW)
+	GPIOB->BRR = 0x00000008 ; // 0b1000
+
+  // Set PB1 (HIGH)
+	GPIOB->BSRR = 0x00000002 ; // 0b0010
+
 
 }
 
