@@ -1,5 +1,4 @@
 
-
 #define _FLASH_PROG		1
 
 
@@ -12,7 +11,6 @@
 #define SIGNATURE_4		0x02
 
 #include "stk500.h"
-// #include "stm32_flash.h"
 
 #define OPTIBOOT_MAJVER 4
 #define OPTIBOOT_MINVER 5
@@ -70,9 +68,9 @@ void RCC_DeInit(void)
 void disableInterrupts()
 {
 	__disable_irq() ;
-	NVIC_DisableIRQ(USART1_IRQn) ;
-	NVIC_DisableIRQ(USART2_IRQn) ;
-	NVIC_DisableIRQ(USART3_IRQn) ;
+	HAL_NVIC_DisableIRQ(USART1_IRQn) ;
+	HAL_NVIC_DisableIRQ(USART2_IRQn) ;
+	HAL_NVIC_DisableIRQ(USART3_IRQn) ;
 
 	// Disable STM32F103-only interrupts
 	#ifdef STM32F103xB
@@ -80,7 +78,6 @@ void disableInterrupts()
 		NVIC_DisableIRQ(TIM1_CC_IRQn) ;
 		NVIC_DisableIRQ(TIM1_UP_IRQn) ;
 		NVIC_DisableIRQ(TIM1_TRG_COM_IRQn) ;
-
 	#endif
 
 	// Disable STM32F303-only interrupts
@@ -100,12 +97,11 @@ void disableInterrupts()
 		NVIC_DisableIRQ(UART5_IRQn) ;
 	#endif
 
-	NVIC_DisableIRQ(TIM3_IRQn) ;
-	NVIC_DisableIRQ(TIM4_IRQn) ;
-	NVIC_DisableIRQ(ADC1_2_IRQn) ;
+	HAL_NVIC_DisableIRQ(TIM3_IRQn) ;
+	HAL_NVIC_DisableIRQ(TIM4_IRQn) ;
+	HAL_NVIC_DisableIRQ(ADC1_2_IRQn) ;
 	SysTick->CTRL = 0 ;
 }
-
 
 static void executeApp()
 {
@@ -121,7 +117,6 @@ static void executeApp()
 
 	if ( *p == 0x20005000 )
 	{
-	 
 		USART1->CR1 = 0 ;
 		USART1->BRR = 0 ;
 		USART2->CR1 = 0 ;
@@ -146,7 +141,6 @@ static void executeApp()
 			USART2->ISR = 0 ;
 			USART3->ISR = 0 ;
 		#endif
-
 
 		RCC->APB1ENR &= ~RCC_APB1ENR_USART2EN ;		// Disable clock
 		RCC->APB1ENR &= ~RCC_APB1ENR_USART3EN ;		// Disable clock
@@ -220,17 +214,32 @@ static uint16_t test1()
 
 uint8_t getch1()
 {
-	while ( ( USART1->SR & USART_SR_RXNE ) == 0 )
-	{
-		IWDG->KR = 0xAAAA ;		// reload
-		if ( TIM2->SR & TIM_SR_UIF )
+	#ifdef STM32F103xB
+		while ( ( USART1->SR & USART_SR_RXNE ) == 0 )
 		{
-  		TIM2->SR &= ~TIM_SR_UIF ;
-			GPIOA->ODR ^= 0x0002 ;
+			IWDG->KR = 0xAAAA ;		// reload
+			if ( TIM2->SR & TIM_SR_UIF )
+			{
+			TIM2->SR &= ~TIM_SR_UIF ;
+				GPIOA->ODR ^= 0x0002 ;
+			}
+			// wait
 		}
-		// wait
-	}
-	return USART1->DR ;
+		return USART1->DR ;
+	#endif
+	#ifdef STM32F303xC
+		while ( ( USART1->ISR & USART_ISR_RXNE ) == 0 )
+		{
+			IWDG->KR = 0xAAAA ;		// reload
+			if ( TIM2->SR & TIM_SR_UIF )
+			{
+			TIM2->SR &= ~TIM_SR_UIF ;
+				GPIOA->ODR ^= 0x0002 ;
+			}
+			// wait
+		}
+		return USART1->RDR ;
+	#endif
 }
 
 uint8_t getch()
@@ -239,48 +248,85 @@ uint8_t getch()
 	{
 		return getch1() ;
 	}
-	while ( ( USART2->SR & USART_SR_RXNE ) == 0 )
-	{
-		IWDG->KR = 0xAAAA ;		// reload
-		if ( TIM2->SR & TIM_SR_UIF )
+	#ifdef STM32F103xB
+		while ( ( USART2->SR & USART_SR_RXNE ) == 0 )
 		{
-  		TIM2->SR &= ~TIM_SR_UIF ;
-			GPIOA->ODR ^= 0x0002 ;
+			IWDG->KR = 0xAAAA ;		// reload
+			if ( TIM2->SR & TIM_SR_UIF )
+			{
+			TIM2->SR &= ~TIM_SR_UIF ;
+				GPIOA->ODR ^= 0x0002 ;
+			}
+			// wait
 		}
-		// wait
-	}
-	return USART2->DR ;
+		return USART2->DR ;
+	#endif
+		#ifdef STM32F303xC
+		while ( ( USART2->ISR & USART_ISR_RXNE ) == 0 )
+		{
+			IWDG->KR = 0xAAAA ;		// reload
+			if ( TIM2->SR & TIM_SR_UIF )
+			{
+			TIM2->SR &= ~TIM_SR_UIF ;
+				GPIOA->ODR ^= 0x0002 ;
+			}
+			// wait
+		}
+		return USART2->RDR ;
+	#endif
 }
 
 void putch( uint8_t byte )
 {
 	if ( Port )
 	{
-		while ( ( USART1->SR & USART_SR_TXE ) == 0 )
-		{
-			// wait
-		}
-		USART1->DR = byte ;
+		#ifdef STM32F103xB
+			while ( ( USART1->SR & USART_SR_TXE ) == 0 )
+			{
+				// wait
+			}
+			USART1->DR = byte ;
+		#endif
+		#ifdef STM32F303xC
+			while ( ( USART1->ISR & USART_ISR_TXE ) == 0 )
+			{
+				// wait
+			}
+			USART1->RDR = byte ;
+		#endif
 	}
 	else
 	{
-		while ( ( USART3->SR & USART_SR_TXE ) == 0 )
-		{
-			// wait
-		}
-		USART3->DR = byte ;
+		#ifdef STM32F103xB
+			while ( ( USART3->SR & USART_SR_TXE ) == 0 )
+			{
+				// wait
+			}
+			USART3->DR = byte ;
+		#endif
+		#ifdef STM32F303xC
+			while ( ( USART3->ISR & USART_ISR_TXE ) == 0 )
+			{
+				// wait
+			}
+			USART3->RDR = byte ;
+		#endif
 	}
 }
 
 static void serialInit()
 {
-	RCC->APB2ENR |= RCC_APB2ENR_USART1EN ;		// Enable clock
-	RCC->APB1ENR |= RCC_APB1ENR_USART2EN ;		// Enable clock
-	RCC->APB1ENR |= RCC_APB1ENR_USART3EN ;		// Enable clock
-	RCC->APB2ENR |= RCC_APB2ENR_IOPAEN ;
-	RCC->APB2ENR |= RCC_APB2ENR_IOPBEN ;
-	RCC->APB2ENR |= RCC_APB2ENR_AFIOEN ;
-	
+	__HAL_RCC_USART1_CLK_ENABLE();		// Enable clock
+	__HAL_RCC_USART2_CLK_ENABLE();		// Enable clock
+	__HAL_RCC_USART3_CLK_ENABLE();		// Enable clock
+
+	__HAL_RCC_GPIOA_CLK_ENABLE() ;
+	__HAL_RCC_GPIOB_CLK_ENABLE() ;
+
+	#ifdef __HAL_RCC_AFIO_CLK_ENABLE
+		__HAL_RCC_AFIO_CLK_ENABLE() ;
+	#endif
+
 	GPIOA->CRH = GPIOA->CRH & 0xFFFFFF0F | 0x00000090 ;	// PA9
 	// USART2 TX is PA2, only Rx used
 	// USART3 TX is PB10, only Tx used
