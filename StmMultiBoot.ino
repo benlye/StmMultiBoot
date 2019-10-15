@@ -18,6 +18,16 @@ GPIO_InitTypeDef GPIO_InitStruct;
 // Structure for erasing flash pages
 FLASH_EraseInitTypeDef EraseInitStruct;
 
+// Boundaries of program flash space
+#ifdef STM32F103xB
+	#define PROGFLASH_START 0x08002000
+	#define PROGFLASH_END 0x08020000
+#endif
+#ifdef STM32F303xC
+	#define PROGFLASH_START 0x08002000
+	#define PROGFLASH_END 0x08040000
+#endif
+
 uint32_t ResetReason ;
 uint32_t LongCount ;
 uint8_t Buff[512] ;
@@ -114,9 +124,9 @@ static void executeApp()
 	// Disable interrupts
 	// Clear pending interrupts
 
-	// Expected at 0x08002000
+	// Expected at PROGFLASH_START (0x08002000)
 	uint32_t *p ;
-	p = (uint32_t *) 0x08002000 ;
+	p = (uint32_t *) PROGFLASH_START ;
 
 	if ( *p == 0x20005000 )
 	{
@@ -591,12 +601,12 @@ void loader( uint32_t check )
 			count /= 2 ;
 			memAddress = (uint8_t *)(address + 0x08000000) ;
 
-			if ( (uint32_t)memAddress < 0x08020000 )
+			if ( (uint32_t)memAddress < PROGFLASH_END )
 			{
 				// Read command terminator, start reply
 				verifySpace();
 
-				if ( (uint32_t)memAddress >= 0x08002000 )
+				if ( (uint32_t)memAddress >= PROGFLASH_START )
 				{
 					if ( ((uint32_t)memAddress & 0x000003FF) == 0 )
 					{
