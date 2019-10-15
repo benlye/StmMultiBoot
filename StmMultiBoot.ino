@@ -1,16 +1,13 @@
+#include "stk500.h"
 
 #define _FLASH_PROG		1
-
 
 // Temp
 #define SIGNATURE_0		0x1E
 #define SIGNATURE_1		0x55 //0x97
 #define SIGNATURE_2		0xAA //0x02
-
 #define SIGNATURE_3		0x97
 #define SIGNATURE_4		0x02
-
-#include "stk500.h"
 
 #define OPTIBOOT_MAJVER 4
 #define OPTIBOOT_MINVER 5
