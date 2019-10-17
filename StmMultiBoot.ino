@@ -1,3 +1,4 @@
+#include "StmMultiBoot.h"
 #include "stk500.h"
 
 #define _FLASH_PROG		1
@@ -81,9 +82,9 @@ void RCC_DeInit(void)
 void disableInterrupts()
 {
 	__disable_irq() ;
-	HAL_NVIC_DisableIRQ(USART1_IRQn) ;
-	HAL_NVIC_DisableIRQ(USART2_IRQn) ;
-	HAL_NVIC_DisableIRQ(USART3_IRQn) ;
+	NVIC_DisableIRQ(USART1_IRQn) ;
+	NVIC_DisableIRQ(USART2_IRQn) ;
+	NVIC_DisableIRQ(USART3_IRQn) ;
 
 	// Disable STM32F103-only interrupts
 	#ifdef STM32F103xB
@@ -110,9 +111,9 @@ void disableInterrupts()
 		NVIC_DisableIRQ(UART5_IRQn) ;
 	#endif
 
-	HAL_NVIC_DisableIRQ(TIM3_IRQn) ;
-	HAL_NVIC_DisableIRQ(TIM4_IRQn) ;
-	HAL_NVIC_DisableIRQ(ADC1_2_IRQn) ;
+	NVIC_DisableIRQ(TIM3_IRQn) ;
+	NVIC_DisableIRQ(TIM4_IRQn) ;
+	NVIC_DisableIRQ(ADC1_2_IRQn) ;
 	SysTick->CTRL = 0 ;
 }
 
