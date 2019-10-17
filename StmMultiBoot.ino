@@ -43,42 +43,6 @@ static void start_timer2()
 	TIM2->ARR = 0xFFFF;		//count till max
 }
 
-void RCC_DeInit(void)
-{
-	/* Disable APB2 Peripheral Reset */
-	RCC->APB2RSTR = 0x00000000;
-
-	/* Disable APB1 Peripheral Reset */
-	RCC->APB1RSTR = 0x00000000;
-
-	/* FLITF and SRAM Clock ON */
-	RCC->AHBENR = 0x00000014;
-
-	/* Disable APB2 Peripheral Clock */
-	RCC->APB2ENR = 0x00000000;
-
-	/* Disable APB1 Peripheral Clock */
-	RCC->APB1ENR = 0x00000000;
-
-	/* Set HSION bit */
-	RCC->CR |= (uint32_t)0x00000001;
-
-	/* Reset SW[1:0], HPRE[3:0], PPRE1[2:0], PPRE2[2:0], ADCPRE[1:0] and MCO[2:0] bits*/
-	RCC->CFGR &= 0xF8FF0000;
-
-	/* Reset HSEON, CSSON and PLLON bits */
-	RCC->CR &= 0xFEF6FFFF;
-
-	/* Reset HSEBYP bit */
-	RCC->CR &= 0xFFFBFFFF;
-
-	/* Reset PLLSRC, PLLXTPRE, PLLMUL[3:0] and USBPRE bits */
-	RCC->CFGR &= 0xFF80FFFF;
-
-	/* Disable all interrupts */
-	RCC->CIR = 0x009F0000;
-}
-
 void disableInterrupts()
 {
 	__disable_irq() ;
@@ -170,7 +134,8 @@ static void executeApp()
 		NVIC->ICPR[1] = 0xFFFFFFFF ;
 		NVIC->ICPR[2] = 0xFFFFFFFF ;
 	 
-		RCC_DeInit() ;
+    HAL_RCC_DeInit();  // Use the HAL function
+    
 		SysTick->CTRL = 0 ;
 		SysTick->LOAD = 0 ;
 		SysTick->VAL = 0 ;
@@ -191,7 +156,7 @@ static void executeApp()
 	}
 }
 
-
+// Checks if USART2 has data to be read; reads it
 static uint16_t test0()
 {
 	#ifdef STM32F103xB
@@ -209,6 +174,7 @@ static uint16_t test0()
 	return 0xFFFF ;
 }
 
+// Checks if USART1 has data to be read; reads it
 static uint16_t test1()
 {
 	#ifdef STM32F103xB
