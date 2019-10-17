@@ -6,7 +6,7 @@
 #endif
 
 #ifdef HAL_UART_MODULE_ENABLED
-  #error "Serial must be disabled in the Tools -> U(S)ART Support menu."
+  #error "Serial must be disabled in the Tools -> U(S)ART Support menu (in order to keep the build under 8KB)."
 #endif
 
 #endif /* __STMMULTIBOOT_H */
