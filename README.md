@@ -13,15 +13,19 @@ The bootloader can be compiled in the Arduino IDE.
 * Version 1.7.0 or later of the official STM32 core must be installed
 
 ### IDE Configuration
-Select the board:
+Select the board from the **Tools** -> **Board** menu:
 * Select **Generic F1 series** -> **BluePill F103C8 (128K)** to build for the STM32F103
 * Select **Generic F3 series** -> **RobotDyn BlackPill F303CC** to build for the STM32F303
 
-To keep the bootloader size below 8KB, HAL serial support must be disabled for both boards:
+To keep the bootloader size below 8KB, HAL serial support must be disabled:
 * Select **Disabled (no serial support)** from the **Tools** -> **U(S)ART Support** menu
 
+## Credits
+This bootloader is based on [work by Mike Blandford](https://github.com/MikeBland/StmMultiBoot/), which is in turn based on the [OptiBoot bootloader](https://github.com/Optiboot/optiboot/) for AVR boards.
 
 
+---
+## Old text
 To use this bootloader, you will need first to flash it to the module. Download the source files from the Github repository. Double click on the StmBoot.ino file to open the Arduino IDE. I'm assuming you already have this configured for building for the STM processor as it is needed for the Multi code.
 In "Tools", set the board to Generic STM32F013C series, the variant to 128K flash, and the Upload method to "Serial".
 You will need to connect to the serial port of the board, using a FTDI, or similar, interface, and fit the link to make it boot in the inbuilt bootloader. Again, this is the same as used for flashing the Multi code.
