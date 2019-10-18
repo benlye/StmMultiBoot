@@ -182,9 +182,6 @@ static void EnableSerialInverter()
 static uint32_t CheckForBindButton()
 {
 	uint8_t ch;
-
-	// Would this work instead?
-	// ch = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0 | GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7)
 	ch = GPIOA->IDR & 0xF1;
 	return (ch != 0xF0) ? 0 : 1;
 }
@@ -507,11 +504,8 @@ void loader( uint32_t check )
 		// Clear the update flag
 		__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
 
-		// Read the input pins
-		ch = GPIOA->IDR & 0xF1 ;
-
 		// Return if the BIND button is not pressed
-		if (!CheckForBindButton())
+		if (CheckForBindButton())
 		{
 			return ;
 		}
@@ -756,9 +750,6 @@ void loader( uint32_t check )
 
 void setup()
 {
-	// Throw in a startup delay to see if it enables the debugger to see inside this code
-	HAL_Delay(5000);
-
 	// Initialize the STM32 HAL
 	HAL_Init();
 
@@ -774,7 +765,6 @@ void setup()
 
 void loop()
 {
-	/*
 	// This might be a better way to launch the loader...
 	// If reset by software, or powered up with protocol 0 and the bind button pressed go straight into the bootloader, otherwise run the app
 	if (SoftwareResetReason() || CheckForBindButton())
@@ -785,14 +775,13 @@ void loop()
 	
 	// Launch the Multi firmware
 	executeApp();
-	*/
 	
-	// loader(1) ;
+	//loader(1) ;
 
 	// Execute loaded application
-	// executeApp() ;
+	//executeApp() ;
 
-	// loader(0) ;
+	//loader(0) ;
 	
 	// If we get here it's because we didn't go into the bootloader and the application code didn't run when we tried to launch it
 	// Blink the LED forever...
