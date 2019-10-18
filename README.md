@@ -1,5 +1,26 @@
 # StmMultiBoot
-Source files for Serial bootloader for use on the STM based Multi Module
+Source files for serial bootloader for STM32-based Multi Modules.
+
+* Enables flashing MultiModule firmware from OpenTX or erSkyTX
+* Uses the official STM32 Arduino core ([Arduino_Core_STM32](https://github.com/stm32duino/Arduino_Core_STM32)) and HAL
+* Supports modules based on STM32F103CB and STM32F303CC MCUs
+  * Does **not** include USB support for STM32F103CB boards
+
+## Compiling
+The bootloader can be compiled in the Arduino IDE.  
+
+* Arduino IDE 1.8.9 or newer is recommended
+* Version 1.7.0 or later of the official STM32 core must be installed
+
+### IDE Configuration
+Select the board:
+* Select **Generic F1 series** -> **BluePill F103C8 (128K)** to build for the STM32F103
+* Select **Generic F3 series** -> **RobotDyn BlackPill F303CC** to build for the STM32F303
+
+To keep the bootloader size below 8KB, HAL serial support must be disabled for both boards:
+* Select **Disabled (no serial support)** from the **Tools** -> **U(S)ART Support** menu
+
+
 
 To use this bootloader, you will need first to flash it to the module. Download the source files from the Github repository. Double click on the StmBoot.ino file to open the Arduino IDE. I'm assuming you already have this configured for building for the STM processor as it is needed for the Multi code.
 In "Tools", set the board to Generic STM32F013C series, the variant to 128K flash, and the Upload method to "Serial".
