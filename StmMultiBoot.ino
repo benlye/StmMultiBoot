@@ -76,9 +76,9 @@ static void GPIO_Init()
 	// Enable the clocks
 	__HAL_RCC_GPIOA_CLK_ENABLE();
 	__HAL_RCC_GPIOB_CLK_ENABLE();
-
+	
 	#ifdef __HAL_RCC_AFIO_CLK_ENABLE
-		__HAL_RCC_AFIO_CLK_ENABLE();
+		__HAL_RCC_AFIO_CLK_ENABLE();		// The AFIO clock only exists on the F103
 	#endif
 
 	// Set PA0, 4-7 (HIGH)
@@ -103,8 +103,8 @@ static void GPIO_Init()
 	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
 	// Disable JTAG
-	__HAL_AFIO_REMAP_SWJ_NOJTAG(); // Keeping SWD enabled, but might need to disable both with __HAL_AFIO_REMAP_SWJ_DISABLE() instead
-
+	//__HAL_AFIO_REMAP_SWJ_DISABLE();		// Disable JTAG and SWD - use for released version
+	__HAL_AFIO_REMAP_SWJ_NOJTAG();			// Disable JTAG but keep SWD enabled - use for development/debugging
 }
 
 static void Serial_Init()
