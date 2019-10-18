@@ -774,16 +774,19 @@ void setup()
 
 void loop()
 {
-	// If reset by software, or powered up with the bind button pressed go straight into the bootloader, otherwise run the app
-
+	/*
+	// This might be a better way to launch the loader...
+	// If reset by software, or powered up with protocol 0 and the bind button pressed go straight into the bootloader, otherwise run the app
 	if (SoftwareResetReason() || CheckForBindButton())
 	{
 		// Run the loader
 		loader(0);
 	}
-
+	
+	// Launch the Multi firmware
 	executeApp();
-
+	*/
+	
 	// loader(1) ;
 
 	// Execute loaded application
