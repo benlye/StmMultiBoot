@@ -27,6 +27,9 @@
 #define OPTIBOOT_MAJVER 4
 #define OPTIBOOT_MINVER 7
 
+// Macro to toggle the LED
+#define __MULTI_TOGGLE_LED() HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1)
+
 // Structure for configuring GPIO pins
 GPIO_InitTypeDef GPIO_InitStruct;
 
@@ -186,41 +189,54 @@ static uint32_t CheckForBindButton()
 	return (ch != 0xF0) ? 0 : 1;
 }
 
+/* Returns 1 if the device was reset via a software request, 0 for any other reset reason */
+static uint32_t SoftwareResetReason()
+{
+	// Get the reset reason
+	ResetReason = RCC->CSR;
+
+	// Clear the reset flag
+	RCC->CSR |= RCC_CSR_RMVF;
+
+
+	return (ResetReason & RCC_CSR_SFTRSTF) ? 1 : 0;
+}
+
 void disableInterrupts()
 {
 	__disable_irq() ;
-	NVIC_DisableIRQ(USART1_IRQn) ;
-	NVIC_DisableIRQ(USART2_IRQn) ;
-	NVIC_DisableIRQ(USART3_IRQn) ;
+	HAL_NVIC_DisableIRQ(USART1_IRQn) ;
+	HAL_NVIC_DisableIRQ(USART2_IRQn) ;
+	HAL_NVIC_DisableIRQ(USART3_IRQn) ;
 
 	// Disable STM32F103-only interrupts
 	#ifdef STM32F103xB
-		NVIC_DisableIRQ(TIM1_BRK_IRQn) ;
-		NVIC_DisableIRQ(TIM1_CC_IRQn) ;
-		NVIC_DisableIRQ(TIM1_UP_IRQn) ;
-		NVIC_DisableIRQ(TIM1_TRG_COM_IRQn) ;
+		HAL_NVIC_DisableIRQ(TIM1_BRK_IRQn) ;
+		HAL_NVIC_DisableIRQ(TIM1_CC_IRQn) ;
+		HAL_NVIC_DisableIRQ(TIM1_UP_IRQn) ;
+		HAL_NVIC_DisableIRQ(TIM1_TRG_COM_IRQn) ;
 	#endif
 
 	// Disable STM32F303-only interrupts
 	#ifdef STM32F303xC
-		NVIC_DisableIRQ(TIM1_BRK_TIM15_IRQn) ;
-		NVIC_DisableIRQ(TIM1_UP_TIM16_IRQn) ;
-		NVIC_DisableIRQ(TIM1_TRG_COM_TIM17_IRQn) ;
-		NVIC_DisableIRQ(TIM1_CC_IRQn) ;
-		NVIC_DisableIRQ(TIM6_DAC_IRQn) ;
-		NVIC_DisableIRQ(TIM7_IRQn) ;
-		NVIC_DisableIRQ(TIM8_BRK_IRQn) ;
-		NVIC_DisableIRQ(TIM8_CC_IRQn) ;
-		NVIC_DisableIRQ(TIM8_UP_IRQn) ;
-		NVIC_DisableIRQ(TIM8_TRG_COM_IRQn) ;
-		NVIC_DisableIRQ(ADC4_IRQn) ;
-		NVIC_DisableIRQ(UART4_IRQn) ;
-		NVIC_DisableIRQ(UART5_IRQn) ;
+		HAL_NVIC_DisableIRQ(TIM1_BRK_TIM15_IRQn) ;
+		HAL_NVIC_DisableIRQ(TIM1_UP_TIM16_IRQn) ;
+		HAL_NVIC_DisableIRQ(TIM1_TRG_COM_TIM17_IRQn) ;
+		HAL_NVIC_DisableIRQ(TIM1_CC_IRQn) ;
+		HAL_NVIC_DisableIRQ(TIM6_DAC_IRQn) ;
+		HAL_NVIC_DisableIRQ(TIM7_IRQn) ;
+		HAL_NVIC_DisableIRQ(TIM8_BRK_IRQn) ;
+		HAL_NVIC_DisableIRQ(TIM8_CC_IRQn) ;
+		HAL_NVIC_DisableIRQ(TIM8_UP_IRQn) ;
+		HAL_NVIC_DisableIRQ(TIM8_TRG_COM_IRQn) ;
+		HAL_NVIC_DisableIRQ(ADC4_IRQn) ;
+		HAL_NVIC_DisableIRQ(UART4_IRQn) ;
+		HAL_NVIC_DisableIRQ(UART5_IRQn) ;
 	#endif
 
-	NVIC_DisableIRQ(TIM3_IRQn) ;
-	NVIC_DisableIRQ(TIM4_IRQn) ;
-	NVIC_DisableIRQ(ADC1_2_IRQn) ;
+	HAL_NVIC_DisableIRQ(TIM3_IRQn) ;
+	HAL_NVIC_DisableIRQ(TIM4_IRQn) ;
+	HAL_NVIC_DisableIRQ(ADC1_2_IRQn) ;
 	SysTick->CTRL = 0 ;
 }
 
@@ -341,11 +357,10 @@ uint8_t getch1()
 	#ifdef STM32F103xB
 		while ( ( USART1->SR & USART_SR_RXNE ) == 0 )
 		{
-			IWDG->KR = 0xAAAA ;		// reload
 			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
 			{
 				__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
-				GPIOA->ODR ^= 0x0002 ;
+				__MULTI_TOGGLE_LED();
 			}
 			// wait
 		}
@@ -354,7 +369,6 @@ uint8_t getch1()
 	#ifdef STM32F303xC
 		while ( ( USART1->ISR & USART_ISR_RXNE ) == 0 )
 		{
-			IWDG->KR = 0xAAAA ;		// reload
 			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
 			{
 				__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
@@ -375,7 +389,6 @@ uint8_t getch()
 	#ifdef STM32F103xB
 		while ( ( USART2->SR & USART_SR_RXNE ) == 0 )
 		{
-			IWDG->KR = 0xAAAA ;		// reload
 			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
 			{
 				__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
@@ -388,7 +401,6 @@ uint8_t getch()
 		#ifdef STM32F303xC
 		while ( ( USART2->ISR & USART_ISR_RXNE ) == 0 )
 		{
-			IWDG->KR = 0xAAAA ;		// reload
 			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
 			{
 				__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
@@ -467,14 +479,13 @@ void loader( uint32_t check )
 	uint8_t lastCh ;
 	uint8_t serialIsInverted = 0;
 
-	ResetReason = RCC->CSR ;
-	RCC->CSR |= RCC_CSR_RMVF ;
-	if ( ResetReason & RCC_CSR_SFTRSTF )
+	// Skip the BIND button check and stay in the bootloader if reset was requested by software (invoked by the radio)
+	if (SoftwareResetReason())
 	{
 		check = 0 ;	// Stay in bootloader
 	}
 
-	NVIC_DisableIRQ(TIM2_IRQn) ;
+	HAL_NVIC_DisableIRQ(TIM2_IRQn) ;
 	if ( check )
 	{
 		// Reset TIM2 to 0
@@ -546,8 +557,6 @@ void loader( uint32_t check )
 				lastCh = ch ; 
 			}
 
-			IWDG->KR = 0xAAAA ;		// reload
-
 			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
 			{
 				__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
@@ -558,7 +567,8 @@ void loader( uint32_t check )
 		/* get character from UART */
 		ch = getch() ;
 
-		if (ch == STK_GET_SYNC) // we only count if we get 5 syncs in a row. Any other value restarts the count
+		// Count the number of STK_GET_SYNCs
+		if (ch == STK_GET_SYNC)
 		{
 			SyncCount += 1;
 		}
@@ -566,8 +576,10 @@ void loader( uint32_t check )
 		{
 			SyncCount = 0;
 		}
+
+		// Toggle serial port inversion if we get five STK_GET_SYNCs in a row
 		if (SyncCount > 5)
-		{ //toggle tx inversion every 5 sequential sync requests
+		{
 			if (serialIsInverted == 1)
 			{
 				DisableSerialInverter();
@@ -744,6 +756,9 @@ void loader( uint32_t check )
 
 void setup()
 {
+	// Throw in a startup delay to see if it enables the debugger to see inside this code
+	HAL_Delay(5000);
+
 	// Initialize the STM32 HAL
 	HAL_Init();
 
@@ -759,14 +774,25 @@ void setup()
 
 void loop()
 {
-	loader(1) ;
+	// If reset by software, or powered up with the bind button pressed go straight into the bootloader, otherwise run the app
+
+	if (SoftwareResetReason() || CheckForBindButton())
+	{
+		// Run the loader
+		loader(0);
+	}
+
+	executeApp();
+
+	// loader(1) ;
 
 	// Execute loaded application
-	executeApp() ;
+	// executeApp() ;
 
-	loader(0) ;
+	// loader(0) ;
 	
-	// The next bit not really needed as loader(0) doesn't return	
+	// If we get here it's because we didn't go into the bootloader and the application code didn't run when we tried to launch it
+	// Blink the LED forever...
 	for(;;)
 	{
 		if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
@@ -774,7 +800,8 @@ void loop()
 			__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
 			if ( ++LongCount > 4 )
 			{
-				GPIOA->ODR ^= 0x0002 ;
+				// GPIOA->ODR ^= 0x0002 ;
+				__MULTI_TOGGLE_LED();
 				LongCount = 0 ;
 			}
 		}
