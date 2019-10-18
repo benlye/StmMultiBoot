@@ -1,1 +1,5 @@
 .vscode/
+Release/
+Debug/
+.vs/
+__vm/
