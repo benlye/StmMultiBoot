@@ -1,5 +1,5 @@
 # StmMultiBoot
-Serial bootloader for STM32-based Multi Modules.
+Serial bootloader for STM32-based MultiModules.
 
 * Enables flashing MultiModule firmware from OpenTX or erSkyTX
 * Uses the official STM32 Arduino core ([Arduino_Core_STM32](https://github.com/stm32duino/Arduino_Core_STM32)) and HAL
@@ -20,8 +20,11 @@ Select the board from the **Tools** -> **Board** menu:
 To keep the bootloader size below 8KB, HAL serial support must be disabled:
 * Select **Disabled (no serial support)** from the **Tools** -> **U(S)ART Support** menu
 
+## Using the bootloader
+[To do]
+
 ## Credits
-This bootloader is based on [work by Mike Blandford](https://github.com/MikeBland/StmMultiBoot/), which is in turn based on the [OptiBoot bootloader](https://github.com/Optiboot/optiboot/) for AVR boards.
+This version of the MultiModule bootloader is based on [StmMultiBoot](https://github.com/MikeBland/StmMultiBoot/) and [StmDualBoot](https://github.com/MikeBland/StmDualBoot/) by Mike Blandford, which are in turn based on the [OptiBoot bootloader](https://github.com/Optiboot/optiboot/) for AVR boards.
 
 
 ---
