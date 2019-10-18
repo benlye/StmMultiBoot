@@ -41,7 +41,7 @@ static TIM_HandleTypeDef Timer2Handle = {
 	.Instance = TIM2
 };
 
-static void start_timer2()
+static void Timer_Init()
 {	
 	__HAL_RCC_TIM2_CLK_ENABLE();
 	Timer2Handle.Instance = TIM2;
@@ -54,6 +54,90 @@ static void start_timer2()
 	Timer2Handle.Init.RepetitionCounter = 0;
 	HAL_TIM_Base_Init(&Timer2Handle);
 	HAL_TIM_Base_Start(&Timer2Handle);
+}
+
+static void GPIO_Init()
+{
+	// Enable the clocks
+	__HAL_RCC_GPIOA_CLK_ENABLE();
+	__HAL_RCC_GPIOB_CLK_ENABLE();
+
+	#ifdef __HAL_RCC_AFIO_CLK_ENABLE
+		__HAL_RCC_AFIO_CLK_ENABLE();
+	#endif
+
+	// Set PA0, 4-7 (HIGH)
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0 | GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7, GPIO_PIN_SET);
+
+	// Configure pins PA0, 4-7 as inputs - PA0 is BIND button, PA4-7 are the rotary dial
+	GPIO_InitStruct.Pin = GPIO_PIN_0 | GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7;
+	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+	GPIO_InitStruct.Pull = GPIO_PULLUP;
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+	// Configure PA1 as output (LED)
+	GPIO_InitStruct.Pin = GPIO_PIN_1;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+	// Configure PB1 and PB3 as output
+	GPIO_InitStruct.Pin = GPIO_PIN_1 | GPIO_PIN_3;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+	// Clear PB3 (LOW)
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
+
+	// Set PB1 (HIGH)
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
+}
+
+static void Serial_Init()
+{
+	// Enable the clocks
+	__HAL_RCC_USART1_CLK_ENABLE();
+	__HAL_RCC_USART2_CLK_ENABLE();
+	__HAL_RCC_USART3_CLK_ENABLE();
+
+	// USART2 - TX=PA2, RX=PA9 - only RX is used 
+	// Configure PA9 as alternate function USART2_RX
+	GPIO_InitStruct.Pin = GPIO_PIN_9;
+	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+	GPIO_InitStruct.Pull = GPIO_PULLUP;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
+
+	#ifdef STM32F303xC
+		GPIO_InitStruct.Alternate = GPIO_AF7_USART2;
+	#endif
+
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+	// USART3 - TX=PB10, RX=PB11 - only TX is used
+	// Configure PB10 as alternate function USART3_TX
+	GPIO_InitStruct.Pin = GPIO_PIN_10;
+	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+	GPIO_InitStruct.Pull = GPIO_PULLUP;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
+
+	#ifdef STM32F303xC
+		GPIO_InitStruct.Alternate = GPIO_AF7_USART3;
+	#endif
+
+	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+	USART1->BRR = 72000000 / 57600;
+	USART1->CR1 = 0x200C;
+	USART2->BRR = 36000000 / 57600;
+	USART2->CR1 = 0x200C;
+	USART2->CR2 = 0;
+	USART2->CR3 = 0;
+	USART3->BRR = 36000000 / 57600;
+	USART3->CR1 = 0x200C;
+	USART3->CR2 = 0;
+	USART3->CR3 = 0;
+
 }
 
 void disableInterrupts()
@@ -308,101 +392,7 @@ void putch( uint8_t byte )
 	}
 }
 
-static void serialInit()
-{
-	__HAL_RCC_USART1_CLK_ENABLE();		// Enable clock
-	__HAL_RCC_USART2_CLK_ENABLE();		// Enable clock
-	__HAL_RCC_USART3_CLK_ENABLE();		// Enable clock
 
-	__HAL_RCC_GPIOA_CLK_ENABLE() ;
-	__HAL_RCC_GPIOB_CLK_ENABLE() ;
-
-	#ifdef __HAL_RCC_AFIO_CLK_ENABLE
-		__HAL_RCC_AFIO_CLK_ENABLE() ;
-	#endif
-
-	// USART2 - TX=PA2, RX=PA9 - only RX is used 
-	// Configure PA9 as alternate function USART2_RX
-	GPIO_InitStruct.Pin = GPIO_PIN_9;
-	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-	GPIO_InitStruct.Pull = GPIO_PULLUP;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
-
-	#ifdef STM32F303xC
-		GPIO_InitStruct.Alternate = GPIO_AF7_USART2;
-	#endif
-
-	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-	// USART3 - TX=PB10, RX=PB11 - only TX is used
-	// Configure PB10 as alternate function USART3_TX
-	GPIO_InitStruct.Pin = GPIO_PIN_10;
-	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-	GPIO_InitStruct.Pull = GPIO_PULLUP;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
-
-	#ifdef STM32F303xC
-		GPIO_InitStruct.Alternate = GPIO_AF7_USART3;
-	#endif
-
-	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-	USART1->BRR = 72000000 / 57600 ;
-	USART1->CR1 = 0x200C ;
-	USART2->BRR = 36000000 / 57600 ;
-	USART2->CR1 = 0x200C ;
-	USART2->CR2 = 0 ;
-	USART2->CR3 = 0 ;
-	USART3->BRR = 36000000 / 57600 ;
-	USART3->CR1 = 0x200C ;
-	USART3->CR2 = 0 ;
-	USART3->CR3 = 0 ;
-
-}
-
-void setup()
-{
-	// Initialize the STM32 HAL
-	HAL_Init();
-
-	// Initialize the USARTs
-	serialInit() ;
-
-	// Start the timer used to blink the LED rapidly
-	start_timer2() ; //0.5us
-
-	// Unlock the flash
-	HAL_FLASH_Unlock() ;
-
-	// Set PA0, 4-7 (HIGH)
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0 | GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7, GPIO_PIN_SET);
-
-	// Configure pins PA0, 4-7 as inputs - PA0 is BIND button, PA4-7 are the rotary dial
-	GPIO_InitStruct.Pin = GPIO_PIN_0 | GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7;
-	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-	GPIO_InitStruct.Pull = GPIO_PULLUP;
-	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-	// Configure PA1 as output (LED)
-	GPIO_InitStruct.Pin = GPIO_PIN_1;
-	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-	
-	// Configure PB1 and PB3 as output
-	GPIO_InitStruct.Pin = GPIO_PIN_1 | GPIO_PIN_3;
-	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-	// Clear PB3 (LOW)
-	GPIOB->BRR = 0x00000008 ; // 0b1000
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
-	
-	// Set PB1 (HIGH)
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
-
-}
 
 void verifySpace()
 {
@@ -443,20 +433,28 @@ void loader( uint32_t check )
 		// Reset TIM2 to 0
 		__HAL_TIM_SET_COUNTER(&Timer2Handle, 0);
 
+		// Clear the update flag
 		__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
 
+		// Wait for the update flag to get set
 		while ( __HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) == 0 )
 		{
 			// wait
 		}
+
+		// Clear the update flag
 		__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
 
+		// Wait for the update flag to get set
 		while (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) == 0)
 		{
 			// wait
 		}
+
+		// Clear the update flag
 		__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
 
+		// Read the BIND button pin; return if it's not set
 		ch = GPIOA->IDR & 0xF1 ;
 		if ( ch != 0xF0 )
 		{
@@ -671,14 +669,32 @@ void loader( uint32_t check )
 	}
 }
 
+void setup()
+{
+	// Initialize the STM32 HAL
+	HAL_Init();
+
+	// Initialize the GPIO pins
+	GPIO_Init();
+
+	// Initialize the USARTs
+	Serial_Init();
+
+	// Initialize the timer
+	Timer_Init();
+
+	// Unlock the flash
+	HAL_FLASH_Unlock();
+}
+
 void loop()
 {
 	loader(1) ;
 
 	// Execute loaded application
-	//executeApp() ;
+	executeApp() ;
 
-	//loader(0) ;
+	loader(0) ;
 	
 	// The next bit not really needed as loader(0) doesn't return	
 	for(;;)
