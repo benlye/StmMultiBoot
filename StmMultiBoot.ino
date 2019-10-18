@@ -36,11 +36,24 @@ uint8_t Buff[512] ;
 uint8_t NotSynced ;
 uint8_t Port ;
 
+// Handle for TIM2
+static TIM_HandleTypeDef Timer2Handle = {
+	.Instance = TIM2
+};
+
 static void start_timer2()
 {	
-	TIM2->CNT = 0 ;
-	TIM2->PSC = 71 ;			// 72-1;for 72 MHZ /1.0usec/(71+1)
-	TIM2->ARR = 0xFFFF;		//count till max
+	__HAL_RCC_TIM2_CLK_ENABLE();
+	Timer2Handle.Instance = TIM2;
+
+	// 72000000 / ((479+1)*(9999+1)) = 15Hz
+	Timer2Handle.Init.Prescaler = 479;
+	Timer2Handle.Init.Period = 9999;
+	Timer2Handle.Init.CounterMode = TIM_COUNTERMODE_UP;
+	Timer2Handle.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+	Timer2Handle.Init.RepetitionCounter = 0;
+	HAL_TIM_Base_Init(&Timer2Handle);
+	HAL_TIM_Base_Start(&Timer2Handle);
 }
 
 void disableInterrupts()
@@ -123,7 +136,8 @@ static void executeApp()
 		RCC->APB1ENR &= ~RCC_APB1ENR_USART2EN ;		// Disable clock
 		RCC->APB1ENR &= ~RCC_APB1ENR_USART3EN ;		// Disable clock
 
-		TIM2->CR1 = 0 ;
+		// Stop TIM2
+		HAL_TIM_Base_Stop(&Timer2Handle);
 
 		disableInterrupts() ;
 	
@@ -134,7 +148,7 @@ static void executeApp()
 		NVIC->ICPR[1] = 0xFFFFFFFF ;
 		NVIC->ICPR[2] = 0xFFFFFFFF ;
 	 
-    HAL_RCC_DeInit();  // Use the HAL function
+		HAL_RCC_DeInit();  // Use the HAL function
     
 		SysTick->CTRL = 0 ;
 		SysTick->LOAD = 0 ;
@@ -198,9 +212,9 @@ uint8_t getch1()
 		while ( ( USART1->SR & USART_SR_RXNE ) == 0 )
 		{
 			IWDG->KR = 0xAAAA ;		// reload
-			if ( TIM2->SR & TIM_SR_UIF )
+			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
 			{
-			TIM2->SR &= ~TIM_SR_UIF ;
+				__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
 				GPIOA->ODR ^= 0x0002 ;
 			}
 			// wait
@@ -211,9 +225,9 @@ uint8_t getch1()
 		while ( ( USART1->ISR & USART_ISR_RXNE ) == 0 )
 		{
 			IWDG->KR = 0xAAAA ;		// reload
-			if ( TIM2->SR & TIM_SR_UIF )
+			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
 			{
-			TIM2->SR &= ~TIM_SR_UIF ;
+				__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
 				GPIOA->ODR ^= 0x0002 ;
 			}
 			// wait
@@ -232,9 +246,9 @@ uint8_t getch()
 		while ( ( USART2->SR & USART_SR_RXNE ) == 0 )
 		{
 			IWDG->KR = 0xAAAA ;		// reload
-			if ( TIM2->SR & TIM_SR_UIF )
+			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
 			{
-			TIM2->SR &= ~TIM_SR_UIF ;
+				__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
 				GPIOA->ODR ^= 0x0002 ;
 			}
 			// wait
@@ -245,9 +259,9 @@ uint8_t getch()
 		while ( ( USART2->ISR & USART_ISR_RXNE ) == 0 )
 		{
 			IWDG->KR = 0xAAAA ;		// reload
-			if ( TIM2->SR & TIM_SR_UIF )
+			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
 			{
-			TIM2->SR &= ~TIM_SR_UIF ;
+				__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
 				GPIOA->ODR ^= 0x0002 ;
 			}
 			// wait
@@ -387,6 +401,7 @@ void setup()
 	
 	// Set PB1 (HIGH)
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
+
 }
 
 void verifySpace()
@@ -425,19 +440,22 @@ void loader( uint32_t check )
 	NVIC_DisableIRQ(TIM2_IRQn) ;
 	if ( check )
 	{
-		TIM2->CNT = 0 ;
-		TIM2->SR &= ~TIM_SR_UIF ;
-		while ( ( TIM2->SR & TIM_SR_UIF ) == 0 )
-		{
-			// wait
-		}
-		TIM2->SR &= ~TIM_SR_UIF ;
+		// Reset TIM2 to 0
+		__HAL_TIM_SET_COUNTER(&Timer2Handle, 0);
 
-		while ( ( TIM2->SR & TIM_SR_UIF ) == 0 )
+		__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
+
+		while ( __HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) == 0 )
 		{
 			// wait
 		}
-		TIM2->SR &= ~TIM_SR_UIF ;
+		__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
+
+		while (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) == 0)
+		{
+			// wait
+		}
+		__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
 
 		ch = GPIOA->IDR & 0xF1 ;
 		if ( ch != 0xF0 )
@@ -483,9 +501,9 @@ void loader( uint32_t check )
 
 			IWDG->KR = 0xAAAA ;		// reload
 
-			if ( TIM2->SR & TIM_SR_UIF )
+			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
 			{
-	  			TIM2->SR &= ~TIM_SR_UIF ;
+				__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
 				GPIOA->ODR ^= 0x0002 ;
 			}
 		}
@@ -658,16 +676,16 @@ void loop()
 	loader(1) ;
 
 	// Execute loaded application
-	executeApp() ;
+	//executeApp() ;
 
-	loader(0) ;
+	//loader(0) ;
 	
 	// The next bit not really needed as loader(0) doesn't return	
 	for(;;)
 	{
-		if ( TIM2->SR & TIM_SR_UIF )
+		if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
 		{
-			TIM2->SR &= ~TIM_SR_UIF ;
+			__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
 			if ( ++LongCount > 4 )
 			{
 				GPIOA->ODR ^= 0x0002 ;
