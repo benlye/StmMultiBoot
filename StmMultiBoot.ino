@@ -25,7 +25,7 @@
 #define SIGNATURE_4		0x02
 
 #define OPTIBOOT_MAJVER 4
-#define OPTIBOOT_MINVER 5
+#define OPTIBOOT_MINVER 7
 
 // Structure for configuring GPIO pins
 GPIO_InitTypeDef GPIO_InitStruct;
@@ -48,6 +48,7 @@ uint32_t LongCount ;
 uint8_t Buff[512] ;
 
 uint8_t NotSynced ;
+uint8_t SyncCount ;
 uint8_t Port ;
 
 // Handle for TIM2
@@ -95,17 +96,15 @@ static void GPIO_Init()
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-	// Configure PB1 and PB3 as output
+	// Configure PB1 and PB3 as output (enable/disable serial inverter)
 	GPIO_InitStruct.Pin = GPIO_PIN_1 | GPIO_PIN_3;
 	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
 	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-	// Clear PB3 (LOW)
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
+	// Disable JTAG
+	__HAL_AFIO_REMAP_SWJ_NOJTAG(); // Keeping SWD enabled, but might need to disable both with __HAL_AFIO_REMAP_SWJ_DISABLE() instead
 
-	// Set PB1 (HIGH)
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
 }
 
 static void Serial_Init()
@@ -152,6 +151,39 @@ static void Serial_Init()
 	USART3->CR2 = 0;
 	USART3->CR3 = 0;
 
+	// Start with the serial inverter disabled
+	DisableSerialInverter();
+}
+
+/* Disables the hardware serial port inverter */
+static void DisableSerialInverter()
+{
+	// Set PB1 (HIGH)
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
+
+	// Clear PB3 (LOW)
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
+
+}
+
+/* Enables the hardware serial port inverter */
+static void EnableSerialInverter()
+{
+	// Set PB1 (HIGH)
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
+
+	// Set PB3 (HIGH)
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_SET);
+}
+
+static uint32_t CheckForBindButton()
+{
+	uint8_t ch;
+
+	// Would this work instead?
+	// ch = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0 | GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7)
+	ch = GPIOA->IDR & 0xF1;
+	return (ch != 0xF0) ? 0 : 1;
 }
 
 void disableInterrupts()
@@ -433,6 +465,7 @@ void loader( uint32_t check )
 	uint8_t GPIOR0 ;
 	uint32_t address = 0 ;
 	uint8_t lastCh ;
+	uint8_t serialIsInverted = 0;
 
 	ResetReason = RCC->CSR ;
 	RCC->CSR |= RCC_CSR_RMVF ;
@@ -450,35 +483,37 @@ void loader( uint32_t check )
 		// Clear the update flag
 		__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
 
-		// Wait for the update flag to get set
-		while ( __HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) == 0 )
+		// Wait two loops of the timer before checking the BIND button
+		uint8_t InterruptCount = 0;
+		while (InterruptCount < 2)
 		{
-			// wait
+			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
+			{
+				InterruptCount++;
+			}
 		}
 
 		// Clear the update flag
 		__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
 
-		// Wait for the update flag to get set
-		while (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) == 0)
-		{
-			// wait
-		}
-
-		// Clear the update flag
-		__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
-
-		// Read the BIND button pin; return if it's not set
+		// Read the input pins
 		ch = GPIOA->IDR & 0xF1 ;
-		if ( ch != 0xF0 )
+
+		// Return if the BIND button is not pressed
+		if (!CheckForBindButton())
 		{
 			return ;
 		}
 	}
 	disableInterrupts() ;
 
+	// Unlock the flash
+	HAL_FLASH_Unlock();
+
 	NotSynced = 1 ;
+	SyncCount = 0;
 	lastCh = 0 ;
+
 	for (;;)
 	{
 		while ( NotSynced )
@@ -522,6 +557,30 @@ void loader( uint32_t check )
 		
 		/* get character from UART */
 		ch = getch() ;
+
+		if (ch == STK_GET_SYNC) // we only count if we get 5 syncs in a row. Any other value restarts the count
+		{
+			SyncCount += 1;
+		}
+		else
+		{
+			SyncCount = 0;
+		}
+		if (SyncCount > 5)
+		{ //toggle tx inversion every 5 sequential sync requests
+			if (serialIsInverted == 1)
+			{
+				DisableSerialInverter();
+				serialIsInverted = 0;
+			}
+			else
+			{
+				EnableSerialInverter();
+				serialIsInverted = 1;
+			}
+			SyncCount = 0;
+		}
+
 		if(ch == STK_GET_PARAMETER)
 		{
 			GPIOR0 = getch() ;
@@ -696,9 +755,6 @@ void setup()
 
 	// Initialize the timer
 	Timer_Init();
-
-	// Unlock the flash
-	HAL_FLASH_Unlock();
 }
 
 void loop()
