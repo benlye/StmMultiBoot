@@ -15,15 +15,14 @@
 #include "StmMultiBoot.h"
 #include "stk500.h"
 
-#define _FLASH_PROG		1
-
-// Temp
+// Signature bytes used for uploads from AVRDUDE - tell it we're an Atmega128
 #define SIGNATURE_0		0x1E
-#define SIGNATURE_1		0x55 //0x97
-#define SIGNATURE_2		0xAA //0x02
+#define SIGNATURE_1		0x55
+#define SIGNATURE_2		0xAA
 #define SIGNATURE_3		0x97
 #define SIGNATURE_4		0x02
 
+// Version numbers
 #define OPTIBOOT_MAJVER 4
 #define OPTIBOOT_MINVER 7
 
@@ -48,6 +47,8 @@ FLASH_EraseInitTypeDef EraseInitStruct;
 	#define RAM_SIZE (uint32_t)0x0000A000
 #endif
 
+#define PROGFLASH_SIZE = EEPROM_START - PROGFLASH_START - 1
+
 uint32_t ResetReason ;
 uint32_t LongCount ;
 uint8_t Buff[512] ;
@@ -63,9 +64,9 @@ static TIM_HandleTypeDef Timer2Handle = {
 
 static void Timer_Init()
 {	
+	// Start the clock
 	__HAL_RCC_TIM2_CLK_ENABLE();
-	Timer2Handle.Instance = TIM2;
-
+	
 	// 72000000 / ((479+1)*(9999+1)) = 15Hz
 	Timer2Handle.Init.Prescaler = 479;
 	Timer2Handle.Init.Period = 9999;
@@ -145,6 +146,7 @@ static void Serial_Init()
 
 	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
+	// Set the baud rates and configure the ports
 	USART1->BRR = 72000000 / 57600;
 	USART1->CR1 = 0x200C;
 	USART2->BRR = 36000000 / 57600;
@@ -200,7 +202,7 @@ static uint32_t SoftwareResetReason()
 	return (ResetReason & RCC_CSR_SFTRSTF) ? 1 : 0;
 }
 
-void disableInterrupts()
+void DisableInterrupts()
 {
 	__disable_irq() ;
 	HAL_NVIC_DisableIRQ(USART1_IRQn) ;
@@ -249,20 +251,21 @@ void Bootloader_JumpToApplication(void)
 {
 	typedef void(*pFunction)(void);
 
+	// Jump address is stored four bytes in the start of the program flash space
 	uint32_t  JumpAddress = *(__IO uint32_t*)(PROGFLASH_START + 4);
 	pFunction Jump = (pFunction)JumpAddress;
 
-	/* First, disable all IRQs */
-	__disable_irq();
-	disableInterrupts();
+	// Disable the interrupts
+	DisableInterrupts();
 
-	RCC->APB1ENR &= ~RCC_APB1ENR_USART2EN;		// Disable clock
-	RCC->APB1ENR &= ~RCC_APB1ENR_USART3EN;		// Disable clock
+	// Disable the clocks
+	RCC->APB1ENR &= ~RCC_APB1ENR_USART2EN;
+	RCC->APB1ENR &= ~RCC_APB1ENR_USART3EN;
 
-	TIM2->CR1 = 0;
+	// Disable the timer
+	HAL_TIM_Base_Start(&Timer2Handle);
 
-	disableInterrupts();
-
+	// Clear any interrupts
 	NVIC->ICER[0] = 0xFFFFFFFF;
 	NVIC->ICER[1] = 0xFFFFFFFF;
 	NVIC->ICER[2] = 0xFFFFFFFF;
@@ -277,8 +280,10 @@ void Bootloader_JumpToApplication(void)
 	SysTick->LOAD = 0;
 	SysTick->VAL = 0;
 
+	// Update the vector table
 	SCB->VTOR = PROGFLASH_START;
 
+	// Jump to the application code
 	__set_MSP(*(__IO uint32_t*)PROGFLASH_START);
 	Jump();
 }
@@ -436,7 +441,8 @@ void bgetNch(uint8_t count)
 	verifySpace() ;
 }
 
-void loader()
+// Main bootloader routine
+void Bootloader()
 {
 	uint8_t ch ;
 	uint8_t GPIOR0 ;
@@ -445,7 +451,7 @@ void loader()
 	uint8_t serialIsInverted = 0;
 
 	// Disable the interrupts
-	disableInterrupts() ;
+	DisableInterrupts() ;
 
 	NotSynced = 1 ;
 	SyncCount = 0;
@@ -486,7 +492,7 @@ void loader()
 			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
 			{
 				__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
-				GPIOA->ODR ^= 0x0002 ;
+				__MULTI_TOGGLE_LED();
 			}
 		}
 		
@@ -550,6 +556,12 @@ void loader()
 			// SET DEVICE EXT is ignored
 			bgetNch(5);
 		}
+		else if (ch == STK_UNIVERSAL)
+		{
+			// UNIVERSAL command is ignored
+			bgetNch(4);
+			putch(0x00);
+		}
 		else if(ch == STK_LOAD_ADDRESS)
 		{
 			// LOAD ADDRESS
@@ -560,11 +572,46 @@ void loader()
 			address <<= 1 ;
 			verifySpace() ;
 		}
-		else if(ch == STK_UNIVERSAL)
+		else if (ch == STK_READ_SIGN)
 		{
-			// UNIVERSAL command is ignored
-			bgetNch(4) ;
-			putch(0x00) ;
+			// Return the signature
+			verifySpace();
+			putch(SIGNATURE_0);
+			if (Port)
+			{
+				putch(SIGNATURE_3);
+				putch(SIGNATURE_4);
+			}
+			else
+			{
+				putch(SIGNATURE_1);
+				putch(SIGNATURE_2);
+			}
+		}
+		else if (ch == STK_ENTER_PROGMODE)
+		{
+			verifySpace();
+
+			// Unlock the flash
+			HAL_FLASH_Unlock();
+
+			// Erase the program flash space
+			uint32_t SectorError = 0;
+			__HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_EOP | FLASH_FLAG_WRPERR | FLASH_FLAG_PGERR);
+
+			EraseInitStruct.TypeErase = FLASH_TYPEERASE_PAGES;
+			EraseInitStruct.PageAddress = (uint32_t)PROGFLASH_START;
+			EraseInitStruct.NbPages = uint32_t((EEPROM_START - PROGFLASH_START) / FLASH_PAGE_SIZE);
+
+			// Do the erase
+			HAL_FLASHEx_Erase(&EraseInitStruct, &SectorError);
+		}
+		else if (ch == STK_LEAVE_PROGMODE)
+		{
+			verifySpace();
+
+			// Lock the flash
+			HAL_FLASH_Lock();
 		}
 		else if(ch == STK_PROG_PAGE)
 		{
@@ -575,7 +622,7 @@ void loader()
 			uint16_t count ;
 			uint16_t data ;
 			uint8_t *memAddress ;
-			length = getch() << 8 ;			/* getlen() */
+			length = getch() << 8 ;
 			length |= getch() ;
 			getch() ;	// discard flash/eeprom byte
 			// While that is going on, read in page contents
@@ -593,37 +640,26 @@ void loader()
 			count = length ;
 			count += 1 ;
 			count /= 2 ;
+
+			// Offset the write by the program flash start address
 			memAddress = (uint8_t *)(address + PROGFLASH_START) ;
 
-			if ( (uint32_t)memAddress < EEPROM_START )
+			// Only write to addresses that are above the bootloader and below the EEPROM
+			if ((uint32_t)memAddress >= PROGFLASH_START && (uint32_t)memAddress < EEPROM_START)
 			{
 				// Read command terminator, start reply
 				verifySpace();
 
-				if ( (uint32_t)memAddress >= PROGFLASH_START )
+				bufPtr = Buff;
+				while ( count )
 				{
-					if ( ((uint32_t)memAddress & 0x000003FF) == 0 )
-					{
-						uint32_t SectorError = 0;
-						// At page start so erase it
-						__HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_EOP | FLASH_FLAG_WRPERR | FLASH_FLAG_PGERR);
-
-						EraseInitStruct.TypeErase = FLASH_TYPEERASE_PAGES;
-						EraseInitStruct.PageAddress = (uint32_t)memAddress;
-						EraseInitStruct.NbPages = 1;
-
-						HAL_FLASHEx_Erase(&EraseInitStruct, &SectorError);
-					}
-					bufPtr = Buff;
-					while ( count )
-					{
-						data = *bufPtr++ ;
-						data |= *bufPtr++ << 8 ;
-						HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, (uint32_t)memAddress, data);
-						memAddress += 2 ;
-						count -= 1 ;
-					}
+					data = *bufPtr++ ;
+					data |= *bufPtr++ << 8 ;
+					HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, (uint32_t)memAddress, data);
+					memAddress += 2 ;
+					count -= 1 ;
 				}
+
 			}
 			else
 			{
@@ -635,9 +671,11 @@ void loader()
 			uint16_t length ;
 			uint8_t xlen ;
 			uint8_t *memAddress ;
+
+			// Offset the read by the program flash start address
 			memAddress = (uint8_t *)(address + PROGFLASH_START) ;
 
-			xlen = getch() ;			/* getlen() */
+			xlen = getch() ;
 			length = getch() | (xlen << 8 ) ;
 			getch() ;
 		    verifySpace() ;
@@ -646,39 +684,6 @@ void loader()
 				putch( *memAddress++) ;
 			}
 	    	while (--length) ;
-		}
-	    else if(ch == STK_READ_SIGN)
-		{
-			// READ SIGN - return what Avrdude wants to hear
-			verifySpace() ;
-			putch(SIGNATURE_0) ;
-			if ( Port )
-			{
-				putch(SIGNATURE_3) ;
-				putch(SIGNATURE_4) ;
-			}
-			else
-			{
-				putch(SIGNATURE_1) ;
-				putch(SIGNATURE_2) ;
-			}
-		}
-		else if (ch == STK_ENTER_PROGMODE)
-		{
-			verifySpace();
-
-			// Unlock the flash
-			HAL_FLASH_Unlock();
-		}
-		else if (ch == STK_LEAVE_PROGMODE)
-		{
-			verifySpace() ;
-
-			// Lock the flash
-			HAL_FLASH_Lock();
-
-			// Launch the application
-			//Bootloader_JumpToApplication();
 		}
 		else
 		{
@@ -712,8 +717,8 @@ void loop()
 	// If reset by software, or powered up with protocol 0 and the bind button pressed, or there's not application, go straight into the bootloader, otherwise run the app
 	if (SoftwareResetReason() || CheckForBindButton() || !Bootloader_CheckForApplication())
 	{
-		// Run the loader
-		loader();
+		// Run the bootloader code
+		Bootloader();
 	}
 	
 	// Launch the Multi firmware if there's a valid application to launch
