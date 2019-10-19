@@ -39,12 +39,12 @@ FLASH_EraseInitTypeDef EraseInitStruct;
 // Boundaries of program flash space
 #ifdef STM32F103xB
 	#define PROGFLASH_START (uint32_t)0x08004000
-	#define PROGFLASH_END (uint32_t)0x08020000
+	#define EEPROM_START (uint32_t)0x0801F800
 	#define RAM_SIZE (uint32_t)0x00005000
 #endif
 #ifdef STM32F303xC
 	#define PROGFLASH_START (uint32_t)0x08002000
-	#define PROGFLASH_END (uint32_t)0x08040000
+	#define EEPROM_START (uint32_t)0x0803F800
 	#define RAM_SIZE (uint32_t)0x0000A000
 #endif
 
@@ -168,7 +168,6 @@ static void DisableSerialInverter()
 
 	// Clear PB3 (LOW)
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
-
 }
 
 /* Enables the hardware serial port inverter */
@@ -197,7 +196,7 @@ static uint32_t SoftwareResetReason()
 	// Clear the reset flag
 	RCC->CSR |= RCC_CSR_RMVF;
 
-
+	// Return 1 for a software reset, otherwise 0
 	return (ResetReason & RCC_CSR_SFTRSTF) ? 1 : 0;
 }
 
@@ -418,8 +417,6 @@ void putch( uint8_t byte )
 	}
 }
 
-
-
 void verifySpace()
 {
 	if (getch() != CRC_EOP)
@@ -439,7 +436,7 @@ void bgetNch(uint8_t count)
 	verifySpace() ;
 }
 
-void loader( uint32_t check )
+void loader()
 {
 	uint8_t ch ;
 	uint8_t GPIOR0 ;
@@ -447,44 +444,8 @@ void loader( uint32_t check )
 	uint8_t lastCh ;
 	uint8_t serialIsInverted = 0;
 
-	// Skip the BIND button check and stay in the bootloader if reset was requested by software (invoked by the radio)
-	if (SoftwareResetReason())
-	{
-		check = 0 ;	// Stay in bootloader
-	}
-
-	HAL_NVIC_DisableIRQ(TIM2_IRQn) ;
-	if ( check )
-	{
-		// Reset TIM2 to 0
-		__HAL_TIM_SET_COUNTER(&Timer2Handle, 0);
-
-		// Clear the update flag
-		__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
-
-		// Wait two loops of the timer before checking the BIND button
-		uint8_t InterruptCount = 0;
-		while (InterruptCount < 2)
-		{
-			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
-			{
-				InterruptCount++;
-			}
-		}
-
-		// Clear the update flag
-		__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
-
-		// Return if the BIND button is not pressed
-		if (CheckForBindButton())
-		{
-			return ;
-		}
-	}
+	// Disable the interrupts
 	disableInterrupts() ;
-
-	// Unlock the flash
-	HAL_FLASH_Unlock();
 
 	NotSynced = 1 ;
 	SyncCount = 0;
@@ -632,9 +593,9 @@ void loader( uint32_t check )
 			count = length ;
 			count += 1 ;
 			count /= 2 ;
-			memAddress = (uint8_t *)(address + 0x08000000) ;
+			memAddress = (uint8_t *)(address + PROGFLASH_START) ;
 
-			if ( (uint32_t)memAddress < PROGFLASH_END )
+			if ( (uint32_t)memAddress < EEPROM_START )
 			{
 				// Read command terminator, start reply
 				verifySpace();
@@ -674,8 +635,8 @@ void loader( uint32_t check )
 			uint16_t length ;
 			uint8_t xlen ;
 			uint8_t *memAddress ;
-			memAddress = (uint8_t *)(address + 0x08000000) ;
-			// READ PAGE - we only read flash
+			memAddress = (uint8_t *)(address + PROGFLASH_START) ;
+
 			xlen = getch() ;			/* getlen() */
 			length = getch() | (xlen << 8 ) ;
 			getch() ;
@@ -702,13 +663,25 @@ void loader( uint32_t check )
 				putch(SIGNATURE_2) ;
 			}
 		}
+		else if (ch == STK_ENTER_PROGMODE)
+		{
+			verifySpace();
+
+			// Unlock the flash
+			HAL_FLASH_Unlock();
+		}
 		else if (ch == STK_LEAVE_PROGMODE)
 		{
 			verifySpace() ;
+
+			// Lock the flash
+			HAL_FLASH_Lock();
+
+			// Launch the application
+			//Bootloader_JumpToApplication();
 		}
 		else
 		{
-			// This covers the response to commands like STK_ENTER_PROGMODE
 			verifySpace() ;
 		}
 		if ( NotSynced )
@@ -736,27 +709,18 @@ void setup()
 
 void loop()
 {
-	// This might be a better way to launch the loader...
-	// If reset by software, or powered up with protocol 0 and the bind button pressed go straight into the bootloader, otherwise run the app
-	if (SoftwareResetReason() || CheckForBindButton())
+	// If reset by software, or powered up with protocol 0 and the bind button pressed, or there's not application, go straight into the bootloader, otherwise run the app
+	if (SoftwareResetReason() || CheckForBindButton() || !Bootloader_CheckForApplication())
 	{
 		// Run the loader
-		loader(0);
+		loader();
 	}
 	
-	// Launch the Multi firmware
-	uint8_t ch = Bootloader_CheckForApplication();
-	if (ch)
+	// Launch the Multi firmware if there's a valid application to launch
+	if (Bootloader_CheckForApplication())
 	{
 		Bootloader_JumpToApplication();
 	}
-	
-	//loader(1) ;
-
-	// Execute loaded application
-	//executeApp() ;
-
-	//loader(0) ;
 	
 	// If we get here it's because we didn't go into the bootloader and the application code didn't run when we tried to launch it
 	// Blink the LED forever...
