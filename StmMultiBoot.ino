@@ -38,12 +38,14 @@ FLASH_EraseInitTypeDef EraseInitStruct;
 
 // Boundaries of program flash space
 #ifdef STM32F103xB
-	#define PROGFLASH_START 0x08002000
-	#define PROGFLASH_END 0x08020000
+	#define PROGFLASH_START (uint32_t)0x08004000
+	#define PROGFLASH_END (uint32_t)0x08020000
+	#define RAM_SIZE (uint32_t)0x00005000
 #endif
 #ifdef STM32F303xC
-	#define PROGFLASH_START 0x08002000
-	#define PROGFLASH_END 0x08040000
+	#define PROGFLASH_START (uint32_t)0x08002000
+	#define PROGFLASH_END (uint32_t)0x08040000
+	#define RAM_SIZE (uint32_t)0x0000A000
 #endif
 
 uint32_t ResetReason ;
@@ -237,80 +239,49 @@ void disableInterrupts()
 	SysTick->CTRL = 0 ;
 }
 
-static void executeApp()
+/*** Check for application in user flash **************************************/
+uint8_t Bootloader_CheckForApplication(void)
 {
+	uint32_t foo = *(__IO uint32_t*)PROGFLASH_START;
+	return (((*(__IO uint32_t*)PROGFLASH_START) & ~(RAM_SIZE)) == 0x20000000) ? 1 : 0;
+}
 
-	// Disable all peripheral clocks
-	// Disable used PLL
-	// Disable interrupts
-	// Clear pending interrupts
+void Bootloader_JumpToApplication(void)
+{
+	typedef void(*pFunction)(void);
 
-	// Expected at PROGFLASH_START (0x08002000)
-	uint32_t *p ;
-	p = (uint32_t *) PROGFLASH_START ;
+	uint32_t  JumpAddress = *(__IO uint32_t*)(PROGFLASH_START + 4);
+	pFunction Jump = (pFunction)JumpAddress;
 
-	if ( *p == 0x20005000 )
-	{
-		USART1->CR1 = 0 ;
-		USART1->BRR = 0 ;
-		USART2->CR1 = 0 ;
-		USART2->BRR = 0 ;
-		USART3->CR1 = 0 ;
-		USART3->BRR = 0 ;
-		#ifdef STM32F103xB
-			(void) USART2->SR ;
-			(void) USART2->DR ;
-			(void) USART1->SR ;
-			(void) USART1->DR ;
-			USART1->SR = 0 ;
-			USART2->SR = 0 ;
-			USART3->SR = 0 ;
-		#endif
-		#ifdef STM32F303xC
-			(void) USART2->ISR ;
-			(void) USART2->RDR ;
-			(void) USART1->ISR ;
-			(void) USART1->RDR ;
-			USART1->ISR = 0 ;
-			USART2->ISR = 0 ;
-			USART3->ISR = 0 ;
-		#endif
+	/* First, disable all IRQs */
+	__disable_irq();
+	disableInterrupts();
 
-		RCC->APB1ENR &= ~RCC_APB1ENR_USART2EN ;		// Disable clock
-		RCC->APB1ENR &= ~RCC_APB1ENR_USART3EN ;		// Disable clock
+	RCC->APB1ENR &= ~RCC_APB1ENR_USART2EN;		// Disable clock
+	RCC->APB1ENR &= ~RCC_APB1ENR_USART3EN;		// Disable clock
 
-		// Stop TIM2
-		HAL_TIM_Base_Stop(&Timer2Handle);
+	TIM2->CR1 = 0;
 
-		disableInterrupts() ;
-	
-		NVIC->ICER[0] = 0xFFFFFFFF ;
-		NVIC->ICER[1] = 0xFFFFFFFF ;
-		NVIC->ICER[2] = 0xFFFFFFFF ;
-		NVIC->ICPR[0] = 0xFFFFFFFF ;
-		NVIC->ICPR[1] = 0xFFFFFFFF ;
-		NVIC->ICPR[2] = 0xFFFFFFFF ;
-	 
-		HAL_RCC_DeInit();  // Use the HAL function
-    
-		SysTick->CTRL = 0 ;
-		SysTick->LOAD = 0 ;
-		SysTick->VAL = 0 ;
-	
-		asm(" mov.w	r1, #134217728");	// 0x8000000
-		asm(" add.w	r1, #8192");		// 0x2000
+	disableInterrupts();
 
-		asm(" movw	r0, #60680");		// 0xED08
-		asm(" movt	r0, #57344");		// 0xE000
-		asm(" str	r1, [r0, #0]");		// Set the VTOR
+	NVIC->ICER[0] = 0xFFFFFFFF;
+	NVIC->ICER[1] = 0xFFFFFFFF;
+	NVIC->ICER[2] = 0xFFFFFFFF;
+	NVIC->ICPR[0] = 0xFFFFFFFF;
+	NVIC->ICPR[1] = 0xFFFFFFFF;
+	NVIC->ICPR[2] = 0xFFFFFFFF;
 
-		asm("ldr	r0, [r1, #0]");		// Stack pointer value
-		asm("msr msp, r0");				// Set it
-		asm("ldr	r0, [r1, #4]");		// Reset address
-		asm("mov.w	r1, #1");
-		asm("orr		r0, r1");		// Set lsbit
-		asm("bx r0");					// Execute application
-	}
+	HAL_RCC_DeInit();
+	HAL_DeInit();
+
+	SysTick->CTRL = 0;
+	SysTick->LOAD = 0;
+	SysTick->VAL = 0;
+
+	SCB->VTOR = PROGFLASH_START;
+
+	__set_MSP(*(__IO uint32_t*)PROGFLASH_START);
+	Jump();
 }
 
 // Checks if USART2 has data to be read; reads it
@@ -774,7 +745,11 @@ void loop()
 	}
 	
 	// Launch the Multi firmware
-	executeApp();
+	uint8_t ch = Bootloader_CheckForApplication();
+	if (ch)
+	{
+		Bootloader_JumpToApplication();
+	}
 	
 	//loader(1) ;
 
