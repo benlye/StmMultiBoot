@@ -26,6 +26,7 @@ To keep the bootloader size below 8KB, HAL serial support must be disabled:
 ## Credits
 This version of the MultiModule bootloader is based on [StmMultiBoot](https://github.com/MikeBland/StmMultiBoot/) and [StmDualBoot](https://github.com/MikeBland/StmDualBoot/) by Mike Blandford, which are in turn based on the [OptiBoot bootloader](https://github.com/Optiboot/optiboot/) for AVR boards.
 
+Akos Pasztor's [STM32 Bootloader](https://github.com/akospasztor/stm32-bootloader/) was also a helpful resource.
 
 ---
 ## Old text
