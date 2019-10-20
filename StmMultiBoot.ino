@@ -62,6 +62,7 @@ static TIM_HandleTypeDef Timer2Handle = {
 	.Instance = TIM2
 };
 
+/* Initializes the Timer */
 static void Timer_Init()
 {	
 	// Start the clock
@@ -77,6 +78,7 @@ static void Timer_Init()
 	HAL_TIM_Base_Start(&Timer2Handle);
 }
 
+/* Initializes the GPIO pins */
 static void GPIO_Init()
 {
 	// Enable the clocks
@@ -113,6 +115,7 @@ static void GPIO_Init()
 	__HAL_AFIO_REMAP_SWJ_NOJTAG();			// Disable JTAG but keep SWD enabled - use for development/debugging
 }
 
+/* Initializes the serial ports */
 static void Serial_Init()
 {
 	// Enable the clocks
@@ -182,6 +185,7 @@ static void EnableSerialInverter()
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_SET);
 }
 
+/* Checks the state of the BIND button */
 static uint32_t CheckForBindButton()
 {
 	uint8_t ch;
@@ -202,6 +206,7 @@ static uint32_t SoftwareResetReason()
 	return (ResetReason & RCC_CSR_SFTRSTF) ? 1 : 0;
 }
 
+/* Disables interrupts */
 void DisableInterrupts()
 {
 	__disable_irq() ;
@@ -240,18 +245,19 @@ void DisableInterrupts()
 	SysTick->CTRL = 0 ;
 }
 
-/*** Check for application in user flash **************************************/
-uint8_t Bootloader_CheckForApplication(void)
+/* Checks for a valid pointer at the beginning of the application flash space */
+uint8_t CheckForApplication(void)
 {
 	uint32_t foo = *(__IO uint32_t*)PROGFLASH_START;
 	return (((*(__IO uint32_t*)PROGFLASH_START) & ~(RAM_SIZE)) == 0x20000000) ? 1 : 0;
 }
 
-void Bootloader_JumpToApplication(void)
+/* Jumps to the application */
+void JumpToApplication(void)
 {
 	typedef void(*pFunction)(void);
 
-	// Jump address is stored four bytes in the start of the program flash space
+	// Jump address is stored four bytes in from the start of the program flash space
 	uint32_t  JumpAddress = *(__IO uint32_t*)(PROGFLASH_START + 4);
 	pFunction Jump = (pFunction)JumpAddress;
 
@@ -263,7 +269,7 @@ void Bootloader_JumpToApplication(void)
 	RCC->APB1ENR &= ~RCC_APB1ENR_USART3EN;
 
 	// Disable the timer
-	HAL_TIM_Base_Start(&Timer2Handle);
+	HAL_TIM_Base_Stop(&Timer2Handle);
 
 	// Clear any interrupts
 	NVIC->ICER[0] = 0xFFFFFFFF;
@@ -273,7 +279,7 @@ void Bootloader_JumpToApplication(void)
 	NVIC->ICPR[1] = 0xFFFFFFFF;
 	NVIC->ICPR[2] = 0xFFFFFFFF;
 
-	HAL_RCC_DeInit();
+	//HAL_RCC_DeInit();
 	HAL_DeInit();
 
 	SysTick->CTRL = 0;
@@ -284,11 +290,11 @@ void Bootloader_JumpToApplication(void)
 	SCB->VTOR = PROGFLASH_START;
 
 	// Jump to the application code
-	__set_MSP(*(__IO uint32_t*)PROGFLASH_START);
+	//__set_MSP(*(__IO uint32_t*)PROGFLASH_START);
 	Jump();
 }
 
-// Checks if USART2 has data to be read; reads it
+/* Checks if USART2 has data to be read; reads it */
 static uint16_t test0()
 {
 	#ifdef STM32F103xB
@@ -306,7 +312,7 @@ static uint16_t test0()
 	return 0xFFFF ;
 }
 
-// Checks if USART1 has data to be read; reads it
+/* Checks if USART1 has data to be read; reads it */
 static uint16_t test1()
 {
 	#ifdef STM32F103xB
@@ -457,7 +463,7 @@ void Bootloader()
 	SyncCount = 0;
 	lastCh = 0 ;
 
-	for (;;)
+	for ( ;; )
 	{
 		while ( NotSynced )
 		{
@@ -659,7 +665,6 @@ void Bootloader()
 					memAddress += 2 ;
 					count -= 1 ;
 				}
-
 			}
 			else
 			{
@@ -715,16 +720,16 @@ void setup()
 void loop()
 {
 	// If reset by software, or powered up with protocol 0 and the bind button pressed, or there's not application, go straight into the bootloader, otherwise run the app
-	if (SoftwareResetReason() || CheckForBindButton() || !Bootloader_CheckForApplication())
+	if (SoftwareResetReason() || CheckForBindButton() || !CheckForApplication())
 	{
-		// Run the bootloader code
+		// Run the main bootloader routine
 		Bootloader();
 	}
 	
 	// Launch the Multi firmware if there's a valid application to launch
-	if (Bootloader_CheckForApplication())
+	if (CheckForApplication())
 	{
-		Bootloader_JumpToApplication();
+		JumpToApplication();
 	}
 	
 	// If we get here it's because we didn't go into the bootloader and the application code didn't run when we tried to launch it
@@ -736,7 +741,6 @@ void loop()
 			__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
 			if ( ++LongCount > 4 )
 			{
-				// GPIOA->ODR ^= 0x0002 ;
 				__MULTI_TOGGLE_LED();
 				LongCount = 0 ;
 			}
