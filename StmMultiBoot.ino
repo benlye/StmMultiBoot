@@ -29,6 +29,7 @@
 // Macro to toggle the LED
 // #define __MULTI_TOGGLE_LED() HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1)
 
+// Function to the toggle the LED
 void ToggleLed()
 {
 	if (TIM2->SR & TIM_SR_UIF)
@@ -37,6 +38,15 @@ void ToggleLed()
 		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1);	// Toggle the LED pin
 	}
 }
+
+/*
+// Handler for TIM2 interrupts
+void TIM2_IRQHandler(void)
+{
+	TIM2->SR &= ~TIM_SR_UIF;				// Clear the interrupt
+	HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1);	// Toggle the LED pin
+}
+*/
 
 // Structure for configuring GPIO pins
 GPIO_InitTypeDef GPIO_InitStruct;
@@ -95,7 +105,9 @@ static void Timer_Init()
 	TIM2->ARR = 4999;				// Period
 	TIM2->DIER = TIM_DIER_UIE;		// Update interrupt enable
 	TIM2->CR1 |= TIM_CR1_CEN;		// Enable the timer
-	HAL_NVIC_EnableIRQ(TIM2_IRQn);	// Enable interrupts from TIM2
+	
+	// This line might only be needed for interrupt handling
+	// HAL_NVIC_EnableIRQ(TIM2_IRQn);	// Enable interrupts from TIM2
 }
 
 /* Initializes the GPIO pins */
