@@ -27,7 +27,16 @@
 #define OPTIBOOT_MINVER 7
 
 // Macro to toggle the LED
-#define __MULTI_TOGGLE_LED() HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1)
+// #define __MULTI_TOGGLE_LED() HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1)
+
+void ToggleLed()
+{
+	if (TIM2->SR & TIM_SR_UIF)
+	{
+		TIM2->SR &= ~TIM_SR_UIF;				// Clear the interrupt
+		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1);	// Toggle the LED pin
+	}
+}
 
 // Structure for configuring GPIO pins
 GPIO_InitTypeDef GPIO_InitStruct;
@@ -49,20 +58,19 @@ FLASH_EraseInitTypeDef EraseInitStruct;
 
 #define PROGFLASH_SIZE = EEPROM_START - PROGFLASH_START - 1
 
-uint32_t ResetReason ;
-uint32_t LongCount ;
 uint8_t Buff[512] ;
 
 uint8_t NotSynced ;
 uint8_t SyncCount ;
 uint8_t Port ;
 
+/*
 // Handle for TIM2
 static TIM_HandleTypeDef Timer2Handle = {
 	.Instance = TIM2
 };
 
-/* Initializes the Timer */
+// Initializes the Timer
 static void Timer_Init()
 {	
 	// Start the clock
@@ -76,6 +84,18 @@ static void Timer_Init()
 	Timer2Handle.Init.RepetitionCounter = 0;
 	HAL_TIM_Base_Init(&Timer2Handle);
 	HAL_TIM_Base_Start(&Timer2Handle);
+}
+*/
+
+// Initializes the Timer without using HAL functions
+static void Timer_Init()
+{
+	TIM2->CNT = 0;					// Zero the count
+	TIM2->PSC = 479;				// Prescaler
+	TIM2->ARR = 4999;				// Period
+	TIM2->DIER = TIM_DIER_UIE;		// Update interrupt enable
+	TIM2->CR1 |= TIM_CR1_CEN;		// Enable the timer
+	HAL_NVIC_EnableIRQ(TIM2_IRQn);	// Enable interrupts from TIM2
 }
 
 /* Initializes the GPIO pins */
@@ -178,28 +198,6 @@ static void ToggleSerialInverter()
 	HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_3);
 }
 
-/*
-// Disables the hardware serial port inverter
-static void DisableSerialInverter()
-{
-	// Set PB1 (HIGH)
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
-
-	// Clear PB3 (LOW)
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
-}
-
-// Enables the hardware serial port inverter
-static void EnableSerialInverter()
-{
-	// Set PB1 (HIGH)
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
-
-	// Set PB3 (HIGH)
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_SET);
-}
-*/
-
 /* Checks the state of the BIND button */
 static uint32_t CheckForBindButton()
 {
@@ -211,9 +209,6 @@ static uint32_t CheckForBindButton()
 /* Returns 1 if the device was reset via a software request, 0 for any other reset reason */
 static uint32_t SoftwareResetReason()
 {
-	// Get the reset reason
-	// ResetReason = RCC->CSR;
-
 	// Clear the reset flag
 	RCC->CSR |= RCC_CSR_RMVF;
 
@@ -283,7 +278,8 @@ void JumpToApplication(void)
 	RCC->APB1ENR &= ~RCC_APB1ENR_USART3EN;
 
 	// Disable the timer
-	HAL_TIM_Base_Stop(&Timer2Handle);
+	// HAL_TIM_Base_Stop(&Timer2Handle);
+	TIM2->CR1 &= ~TIM_CR1_CEN;
 
 	// Clear any interrupts
 	NVIC->ICER[0] = 0xFFFFFFFF;
@@ -349,11 +345,14 @@ uint8_t getch1()
 	#ifdef STM32F103xB
 		while ( ( USART1->SR & USART_SR_RXNE ) == 0 )
 		{
+			/*
 			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
 			{
 				__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
 				__MULTI_TOGGLE_LED();
 			}
+			*/
+			ToggleLed();
 			// wait
 		}
 		return USART1->DR ;
@@ -361,11 +360,14 @@ uint8_t getch1()
 	#ifdef STM32F303xC
 		while ( ( USART1->ISR & USART_ISR_RXNE ) == 0 )
 		{
+			/*
 			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
 			{
 				__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
-				GPIOA->ODR ^= 0x0002 ;
+				__MULTI_TOGGLE_LED();
 			}
+			*/
+			ToggleLed();
 			// wait
 		}
 		return USART1->RDR ;
@@ -381,11 +383,14 @@ uint8_t getch()
 	#ifdef STM32F103xB
 		while ( ( USART2->SR & USART_SR_RXNE ) == 0 )
 		{
+			/*
 			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
 			{
 				__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
-				GPIOA->ODR ^= 0x0002 ;
+				__MULTI_TOGGLE_LED();
 			}
+			*/
+			ToggleLed();
 			// wait
 		}
 		return USART2->DR ;
@@ -393,11 +398,14 @@ uint8_t getch()
 		#ifdef STM32F303xC
 		while ( ( USART2->ISR & USART_ISR_RXNE ) == 0 )
 		{
+			/*
 			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
 			{
 				__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
-				GPIOA->ODR ^= 0x0002 ;
+				__MULTI_TOGGLE_LED();
 			}
+			*/
+			ToggleLed();
 			// wait
 		}
 		return USART2->RDR ;
@@ -462,7 +470,7 @@ void bgetNch(uint8_t count)
 }
 
 // Main bootloader routine
-void Bootloader()
+void FlashLoader()
 {
 	uint8_t ch ;
 	uint8_t GPIOR0 ;
@@ -508,11 +516,14 @@ void Bootloader()
 				lastCh = ch ; 
 			}
 
+			/*
 			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
 			{
 				__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
 				__MULTI_TOGGLE_LED();
 			}
+			*/
+			ToggleLed();
 		}
 		
 		/* get character from UART */
@@ -521,17 +532,16 @@ void Bootloader()
 		// Count the number of STK_GET_SYNCs
 		if (ch == STK_GET_SYNC)
 		{
-			SyncCount += 1;
+			// Toggle serial port inversion and reset the counter if we get five STK_GET_SYNCs in a row
+			if (++SyncCount > 5)
+			{
+				ToggleSerialInverter();
+				SyncCount = 0;
+			}
 		}
 		else
 		{
-			SyncCount = 0;
-		}
-
-		// Toggle serial port inversion and reset the counter if we get five STK_GET_SYNCs in a row
-		if (SyncCount > 5)
-		{
-			ToggleSerialInverter();
+			// Got something other than a SYNC - reset the counter
 			SyncCount = 0;
 		}
 
@@ -627,7 +637,6 @@ void Bootloader()
 		{
 			// PROGRAM PAGE - we support flash programming only, not EEPROM
 			uint8_t *bufPtr;
-			uint16_t addrPtr;
 			uint16_t length ;
 			uint16_t count ;
 			uint16_t data ;
@@ -727,27 +736,12 @@ void loop()
 	if (SoftwareResetReason() || CheckForBindButton() || !CheckForApplication())
 	{
 		// Run the main bootloader routine
-		Bootloader();
+		FlashLoader();
 	}
 	
 	// Launch the Multi firmware if there's a valid application to launch
 	if (CheckForApplication())
 	{
 		JumpToApplication();
-	}
-	
-	// If we get here it's because we didn't go into the bootloader and the application code didn't run when we tried to launch it
-	// Blink the LED forever...
-	for(;;)
-	{
-		if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
-		{
-			__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
-			if ( ++LongCount > 4 )
-			{
-				__MULTI_TOGGLE_LED();
-				LongCount = 0 ;
-			}
-		}
 	}
 }
