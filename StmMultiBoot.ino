@@ -110,9 +110,11 @@ static void GPIO_Init()
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
 	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-	// Disable JTAG
-	//__HAL_AFIO_REMAP_SWJ_DISABLE();		// Disable JTAG and SWD - use for released version
-	__HAL_AFIO_REMAP_SWJ_NOJTAG();			// Disable JTAG but keep SWD enabled - use for development/debugging
+	// Disable JTAG on the STM32F103 only (not needed on STM32F303)
+	#ifdef STM32F103xB
+		//__HAL_AFIO_REMAP_SWJ_DISABLE();		// Disable JTAG and SWD - use for released version
+		__HAL_AFIO_REMAP_SWJ_NOJTAG();			// Disable JTAG but keep SWD enabled - use for development/debugging
+	#endif
 }
 
 /* Initializes the serial ports */
@@ -161,11 +163,23 @@ static void Serial_Init()
 	USART3->CR2 = 0;
 	USART3->CR3 = 0;
 
-	// Start with the serial inverter disabled
-	DisableSerialInverter();
+	/* Start with the serial inverter disabled */
+	// Set PB1 (HIGH)
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
+
+	// Clear PB3 (LOW)
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
 }
 
-/* Disables the hardware serial port inverter */
+/* Toggles the state of the hardware serial port inverter */
+static void ToggleSerialInverter()
+{
+	// Toggle PB3
+	HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_3);
+}
+
+/*
+// Disables the hardware serial port inverter
 static void DisableSerialInverter()
 {
 	// Set PB1 (HIGH)
@@ -175,7 +189,7 @@ static void DisableSerialInverter()
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
 }
 
-/* Enables the hardware serial port inverter */
+// Enables the hardware serial port inverter
 static void EnableSerialInverter()
 {
 	// Set PB1 (HIGH)
@@ -184,26 +198,27 @@ static void EnableSerialInverter()
 	// Set PB3 (HIGH)
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_SET);
 }
+*/
 
 /* Checks the state of the BIND button */
 static uint32_t CheckForBindButton()
 {
-	uint8_t ch;
-	ch = GPIOA->IDR & 0xF1;
-	return (ch != 0xF0) ? 0 : 1;
+	//uint8_t ch;
+	//ch = GPIOA->IDR & 0xF1;
+	return ((GPIOA->IDR & 0xF1) != 0xF0) ? 0 : 1;
 }
 
 /* Returns 1 if the device was reset via a software request, 0 for any other reset reason */
 static uint32_t SoftwareResetReason()
 {
 	// Get the reset reason
-	ResetReason = RCC->CSR;
+	// ResetReason = RCC->CSR;
 
 	// Clear the reset flag
 	RCC->CSR |= RCC_CSR_RMVF;
 
 	// Return 1 for a software reset, otherwise 0
-	return (ResetReason & RCC_CSR_SFTRSTF) ? 1 : 0;
+	return (RCC->CSR & RCC_CSR_SFTRSTF) ? 1 : 0;
 }
 
 /* Disables interrupts */
@@ -248,7 +263,6 @@ void DisableInterrupts()
 /* Checks for a valid pointer at the beginning of the application flash space */
 uint8_t CheckForApplication(void)
 {
-	uint32_t foo = *(__IO uint32_t*)PROGFLASH_START;
 	return (((*(__IO uint32_t*)PROGFLASH_START) & ~(RAM_SIZE)) == 0x20000000) ? 1 : 0;
 }
 
@@ -454,7 +468,6 @@ void Bootloader()
 	uint8_t GPIOR0 ;
 	uint32_t address = 0 ;
 	uint8_t lastCh ;
-	uint8_t serialIsInverted = 0;
 
 	// Disable the interrupts
 	DisableInterrupts() ;
@@ -515,19 +528,10 @@ void Bootloader()
 			SyncCount = 0;
 		}
 
-		// Toggle serial port inversion if we get five STK_GET_SYNCs in a row
+		// Toggle serial port inversion and reset the counter if we get five STK_GET_SYNCs in a row
 		if (SyncCount > 5)
 		{
-			if (serialIsInverted == 1)
-			{
-				DisableSerialInverter();
-				serialIsInverted = 0;
-			}
-			else
-			{
-				EnableSerialInverter();
-				serialIsInverted = 1;
-			}
+			ToggleSerialInverter();
 			SyncCount = 0;
 		}
 
