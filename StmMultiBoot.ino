@@ -47,6 +47,7 @@ extern "C" {
 /*
  * Initializes Timer 2
  * Configures TIM2 without using the HAL functions so that we can redefine the IRQ handler and keep the bootloader size down.
+ * Frequency is 15Hz: 72000000 / ((479+1) * (9999+1)) = 15
  */
 static void Timer_Init()
 {
@@ -82,7 +83,7 @@ static void GPIO_Init()
 	GPIO_InitStruct.Pull = GPIO_PULLUP;
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-	// Configure PA1 and PA2 as outputs (red and green LEDs)
+	// Configure PA1 and PA2 as outputs (red LED is PA1; green LED is PA2)
 	GPIO_InitStruct.Pin = GPIO_PIN_1 | GPIO_PIN_2;
 	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -98,8 +99,8 @@ static void GPIO_Init()
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
 
-	// Configure PA9 as alternate function USART2_RX (USART2_TX=PA2, USART2_RX=PA9 - only RX (PA9) is used)
-	GPIO_InitStruct.Pin = GPIO_PIN_9;
+	// Configure PA9 as alternate function USART2_RX (USART2_TX=PA2, USART2_RX=PA3 - only RX (PA3) is used)
+	GPIO_InitStruct.Pin = GPIO_PIN_3;
 	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
 	GPIO_InitStruct.Pull = GPIO_PULLUP;
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
@@ -118,9 +119,11 @@ static void GPIO_Init()
 #endif
 	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-	// Disable JTAG
+#ifdef STM32F103xB
+	// Disable JTAG for STM32F103 only
 	//__HAL_AFIO_REMAP_SWJ_DISABLE();		// Disable JTAG and SWD - use for released version
 	__HAL_AFIO_REMAP_SWJ_NOJTAG();			// Disable JTAG but keep SWD enabled - use for development/debugging
+#endif
 }
 
 /* Initializes the serial ports */
