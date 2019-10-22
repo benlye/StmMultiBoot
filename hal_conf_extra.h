@@ -16,6 +16,7 @@
  * Disable the unused STM32 HAL modules - saves space and keeps the bootloader below 8KB
  * See https://github.com/stm32duino/wiki/wiki/HAL-configuration for more information.
  */
+
 #define HAL_ADC_MODULE_DISABLED
 #define HAL_I2C_MODULE_DISABLED
 #define HAL_RTC_MODULE_DISABLED
