@@ -99,7 +99,7 @@ static void GPIO_Init()
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
 
-	// Configure PA9 as alternate function USART2_RX (USART2_TX=PA2, USART2_RX=PA3 - only RX (PA3) is used)
+	// Configure PA3 as alternate function USART2_RX (USART2_TX=PA2, USART2_RX=PA3 - only RX (PA3) is used)
 	GPIO_InitStruct.Pin = GPIO_PIN_3;
 	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
 	GPIO_InitStruct.Pull = GPIO_PULLUP;
@@ -119,10 +119,8 @@ static void GPIO_Init()
 #endif
 	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-#ifdef STM32F103xB
-	// Disable JTAG for STM32F103 only
-	//__HAL_AFIO_REMAP_SWJ_DISABLE();		// Disable JTAG and SWD - use for released version
-	__HAL_AFIO_REMAP_SWJ_NOJTAG();			// Disable JTAG but keep SWD enabled - use for development/debugging
+#if defined(STM32F103xB) && !defined(_DEBUG)
+	__HAL_AFIO_REMAP_SWJ_DISABLE();		// Disable JTAG and SWD
 #endif
 }
 
