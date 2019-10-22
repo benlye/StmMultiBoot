@@ -16,16 +16,16 @@
 #include "stk500.h"
 
 // Buffer for serial read/write operations
-uint8_t Buff[512];
+uint8_t serialBuffer[512];
 
 // Flag to indicate STK sync status
-uint8_t NotSynced;
+uint8_t notSynced;
 
 // Counter for STK SYNC packets
-uint8_t SyncCount;
+uint8_t syncCount;
 
-// Flag to indicate active serial port(s); 0 = USART2 + USART3; 1 = USART1
-uint8_t Port;
+// Flag to indicate the active serial port(s); 0 = USART2 + USART3; 1 = USART1
+uint8_t usart1Active;
 
 /* 
  * Timer 2 interrupt handler override
@@ -146,6 +146,7 @@ static void Serial_Init()
 }
 
 /* Disables the hardware serial port inverter */
+/*
 static void DisableSerialInverter()
 {
 	// Set PB1 (HIGH)
@@ -154,8 +155,10 @@ static void DisableSerialInverter()
 	// Clear PB3 (LOW)
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
 }
+*/
 
 /* Enables the hardware serial port inverter */
+/*
 static void EnableSerialInverter()
 {
 	// Set PB1 (HIGH)
@@ -164,6 +167,7 @@ static void EnableSerialInverter()
 	// Set PB3 (HIGH)
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_SET);
 }
+*/
 
 /* Toggles the hardware serial port inverter */
 static void ToggleSerialInverter()
@@ -172,7 +176,10 @@ static void ToggleSerialInverter()
 	HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_3);
 }
 
-/* Checks the state of the BIND button */
+/* 
+ * Checks the state of the BIND button and the rotary selector
+ * Returns 1 if the BIND button is pressed and the rotary selector is on '0', otherwise returns 0.
+ */
 static uint32_t CheckForBindButton()
 {
 	return ((GPIOA->IDR & 0xF1) != 0xF0) ? 0 : 1;
@@ -195,16 +202,16 @@ void DisableInterrupts()
 	HAL_NVIC_DisableIRQ(USART1_IRQn);
 	HAL_NVIC_DisableIRQ(USART2_IRQn);
 	HAL_NVIC_DisableIRQ(USART3_IRQn);
+	HAL_NVIC_DisableIRQ(TIM3_IRQn);
+	HAL_NVIC_DisableIRQ(TIM4_IRQn);
+	HAL_NVIC_DisableIRQ(ADC1_2_IRQn);
 
-	// Disable STM32F103-only interrupts
 #ifdef STM32F103xB
 	HAL_NVIC_DisableIRQ(TIM1_BRK_IRQn);
 	HAL_NVIC_DisableIRQ(TIM1_CC_IRQn);
 	HAL_NVIC_DisableIRQ(TIM1_UP_IRQn);
 	HAL_NVIC_DisableIRQ(TIM1_TRG_COM_IRQn);
 #endif
-
-	// Disable STM32F303-only interrupts
 #ifdef STM32F303xC
 	HAL_NVIC_DisableIRQ(TIM1_BRK_TIM15_IRQn);
 	HAL_NVIC_DisableIRQ(TIM1_UP_TIM16_IRQn);
@@ -220,10 +227,6 @@ void DisableInterrupts()
 	HAL_NVIC_DisableIRQ(UART4_IRQn);
 	HAL_NVIC_DisableIRQ(UART5_IRQn);
 #endif
-
-	HAL_NVIC_DisableIRQ(TIM3_IRQn);
-	HAL_NVIC_DisableIRQ(TIM4_IRQn);
-	HAL_NVIC_DisableIRQ(ADC1_2_IRQn);
 	SysTick->CTRL = 0;
 }
 
@@ -239,8 +242,8 @@ void JumpToApplication(void)
 	typedef void(*pFunction)(void);
 
 	// Jump address is stored four bytes in from the start of the program flash space
-	uint32_t  JumpAddress = *(__IO uint32_t*)(PROGFLASH_START + 4);
-	pFunction Jump = (pFunction)JumpAddress;
+	uint32_t jumpAddress = *(__IO uint32_t*)(PROGFLASH_START + 4);
+	pFunction Jump = (pFunction)jumpAddress;
 
 	// Disable the interrupts
 	DisableInterrupts();
@@ -275,26 +278,11 @@ void JumpToApplication(void)
 	Jump();
 }
 
-/* Checks if USART2 has data to be read; reads it */
-static uint16_t test0()
-{
-#ifdef STM32F103xB
-	if (USART2->SR & USART_SR_RXNE)
-	{
-		return USART2->DR;
-	}
-#endif
-#ifdef STM32F303xC
-	if (USART2->ISR & USART_ISR_RXNE)
-	{
-		return USART2->RDR;
-	}
-#endif
-	return 0xFFFF;
-}
-
-/* Checks if USART1 has data to be read; reads it */
-static uint16_t test1()
+/*
+ * Checks if USART1 has data to be read
+ * If there is data, read it; if not, return 0xFFFF
+ */
+static uint16_t TestUsart1()
 {
 #ifdef STM32F103xB
 	if (USART1->SR & USART_SR_RXNE)
@@ -311,7 +299,29 @@ static uint16_t test1()
 	return 0xFFFF;
 }
 
-uint8_t getch1()
+/* 
+ * Checks if USART2 has data to be read
+ * If there is data, read it; if not, return 0xFFFF
+ */
+static uint16_t TestUsart2()
+{
+#ifdef STM32F103xB
+	if (USART2->SR & USART_SR_RXNE)
+	{
+		return USART2->DR;
+	}
+#endif
+#ifdef STM32F303xC
+	if (USART2->ISR & USART_ISR_RXNE)
+	{
+		return USART2->RDR;
+	}
+#endif
+	return 0xFFFF;
+}
+
+/* Gets a character from USART1 */
+uint8_t GetChar_1()
 {
 #ifdef STM32F103xB
 	while ((USART1->SR & USART_SR_RXNE) == 0)
@@ -329,11 +339,12 @@ uint8_t getch1()
 #endif
 }
 
-uint8_t getch()
+/* Gets a character from serial */
+uint8_t GetChar()
 {
-	if (Port)
+	if (usart1Active)
 	{
-		return getch1();
+		return GetChar_1();
 	}
 #ifdef STM32F103xB
 	while ((USART2->SR & USART_SR_RXNE) == 0)
@@ -351,9 +362,10 @@ uint8_t getch()
 #endif
 }
 
-void putch(uint8_t byte)
+/* Sends a character to the serial device */
+void PutChar(uint8_t byte)
 {
-	if (Port)
+	if (usart1Active)
 	{
 #ifdef STM32F103xB
 		while ((USART1->SR & USART_SR_TXE) == 0)
@@ -389,90 +401,108 @@ void putch(uint8_t byte)
 	}
 }
 
-void verifySpace()
+/* 
+ * Verifies that the next character received after an STK command is a CRC_EOP (SPACE)
+ * Sends STK_INSYNC if it is, otherwise sets NotSynced
+ */
+void VerifyCommand()
 {
-	if (getch() != CRC_EOP)
+	if (GetChar() != CRC_EOP)
 	{
-		NotSynced = 1;
+		notSynced = 1;
 		return;
 	}
-	putch(STK_INSYNC);
+	PutChar(STK_INSYNC);
 }
 
-void bgetNch(uint8_t count)
+/*
+ * Discards STK commands we don't care about
+ * Skips <count> characters
+ */
+void SkipChars(uint8_t count)
 {
 	do
 	{
-		getch();
+		GetChar();
 	} while (--count);
-	verifySpace();
+
+	VerifyCommand();
 }
 
 // Main bootloader routine
 void FlashLoader()
 {
+	// Character to read from or write to serial
 	uint8_t ch;
-	uint8_t GPIOR0;
+
+	// Flash address to write to or read from
 	uint32_t address = 0;
+
+	// Last character from serial - used when checking for SYNC
 	uint8_t lastCh;
-	uint8_t serialIsInverted = 0;
+	
+	// Indicate if serial port is currently inverted
+	// uint8_t serialIsInverted = 0;
 
 	// Disable the interrupts
 	DisableInterrupts();
 
-	NotSynced = 1;
-	SyncCount = 0;
+	notSynced = 1;
+	syncCount = 0;
 	lastCh = 0;
 
 	for (;; )
 	{
-		while (NotSynced)
+		while (notSynced)
 		{
 			uint16_t data;
 
-			data = test0();
+			// Check for serial data on USART2
+			data = TestUsart2();
 			if (data != 0xFFFF)
 			{
 				ch = data;
 				if ((lastCh == STK_GET_SYNC) && (ch == CRC_EOP))
 				{
-					NotSynced = 0;
-					Port = 0;
+					notSynced = 0;
+					usart1Active = 0;
 					break;
 				}
 				lastCh = ch;
 			}
 
-			data = test1();
+			// Check for serial data on USART1
+			data = TestUsart1();
 			if (data != 0xFFFF)
 			{
 				ch = data;
 				if ((lastCh == STK_GET_SYNC) && (ch == CRC_EOP))
 				{
-					NotSynced = 0;
-					Port = 1;
+					notSynced = 0;
+					usart1Active = 1;
 					break;
 				}
 				lastCh = ch;
 			}
 		}
 
-		/* get character from UART */
-		ch = getch();
+		/* Get character from UART */
+		ch = GetChar();
 
 		// Count the number of STK_GET_SYNCs
 		if (ch == STK_GET_SYNC)
 		{
-			SyncCount += 1;
+			syncCount += 1;
 		}
 		else
 		{
-			SyncCount = 0;
+			syncCount = 0;
 		}
 
 		// Toggle serial port inversion if we get five STK_GET_SYNCs in a row
-		if (SyncCount > 5)
+		if (syncCount > 4)
 		{
+			/*
 			if (serialIsInverted == 1)
 			{
 				DisableSerialInverter();
@@ -483,72 +513,74 @@ void FlashLoader()
 				EnableSerialInverter();
 				serialIsInverted = 1;
 			}
-			SyncCount = 0;
+			*/
+			ToggleSerialInverter();
+			syncCount = 0;
 		}
 
 		if (ch == STK_GET_PARAMETER)
 		{
-			GPIOR0 = getch();
-			verifySpace();
-			if (GPIOR0 == 0x82)
+			uint8_t cmdParameter = GetChar();
+			VerifyCommand();
+			if (cmdParameter == 0x82)
 			{
-				putch(OPTIBOOT_MINVER);
+				PutChar(OPTIBOOT_MINVER);
 			}
-			else if (GPIOR0 == 0x81)
+			else if (cmdParameter == 0x81)
 			{
-				putch(OPTIBOOT_MAJVER);
+				PutChar(OPTIBOOT_MAJVER);
 			}
 			else
 			{
 				// Return a generic 0x03 reply to keep AVRDUDE happy
-				putch(0x03);
+				PutChar(0x03);
 			}
 		}
 		else if (ch == STK_SET_DEVICE)
 		{
 			// SET DEVICE is ignored
-			bgetNch(20);
+			SkipChars(20);
 		}
 		else if (ch == STK_SET_DEVICE_EXT)
 		{
 			// SET DEVICE EXT is ignored
-			bgetNch(5);
+			SkipChars(5);
 		}
 		else if (ch == STK_UNIVERSAL)
 		{
 			// UNIVERSAL command is ignored
-			bgetNch(4);
-			putch(0x00);
+			SkipChars(4);
+			PutChar(0x00);
 		}
 		else if (ch == STK_LOAD_ADDRESS)
 		{
 			// LOAD ADDRESS
 			uint16_t newAddress;
-			newAddress = getch();
-			newAddress = (newAddress & 0xff) | (getch() << 8);
+			newAddress = GetChar();
+			newAddress = (newAddress & 0xff) | (GetChar() << 8);
 			address = newAddress; // Convert from word address to byte address
 			address <<= 1;
-			verifySpace();
+			VerifyCommand();
 		}
 		else if (ch == STK_READ_SIGN)
 		{
 			// Return the signature
-			verifySpace();
-			putch(SIGNATURE_0);
-			if (Port)
+			VerifyCommand();
+			PutChar(SIGNATURE_0);
+			if (usart1Active)
 			{
-				putch(SIGNATURE_3);
-				putch(SIGNATURE_4);
+				PutChar(SIGNATURE_3);
+				PutChar(SIGNATURE_4);
 			}
 			else
 			{
-				putch(SIGNATURE_1);
-				putch(SIGNATURE_2);
+				PutChar(SIGNATURE_1);
+				PutChar(SIGNATURE_2);
 			}
 		}
 		else if (ch == STK_ENTER_PROGMODE)
 		{
-			verifySpace();
+			VerifyCommand();
 
 			// Unlock the flash
 			HAL_FLASH_Unlock();
@@ -570,7 +602,7 @@ void FlashLoader()
 		}
 		else if (ch == STK_LEAVE_PROGMODE)
 		{
-			verifySpace();
+			VerifyCommand();
 
 			// Lock the flash
 			HAL_FLASH_Lock();
@@ -583,15 +615,15 @@ void FlashLoader()
 			uint16_t count;
 			uint16_t data;
 			uint8_t *memAddress;
-			length = getch() << 8;
-			length |= getch();
-			getch();	// discard flash/eeprom byte
+			length = GetChar() << 8;
+			length |= GetChar();
+			GetChar();	// discard flash/eeprom byte
 			// While that is going on, read in page contents
 			count = length;
-			bufPtr = Buff;
+			bufPtr = serialBuffer;
 			do
 			{
-				*bufPtr++ = getch();
+				*bufPtr++ = GetChar();
 			} while (--count);
 			if (length & 1)
 			{
@@ -608,9 +640,9 @@ void FlashLoader()
 			if ((uint32_t)memAddress >= PROGFLASH_START && (uint32_t)memAddress < EEPROM_START)
 			{
 				// Read command terminator, start reply
-				verifySpace();
+				VerifyCommand();
 
-				bufPtr = Buff;
+				bufPtr = serialBuffer;
 				while (count)
 				{
 					data = *bufPtr++;
@@ -622,7 +654,7 @@ void FlashLoader()
 			}
 			else
 			{
-				verifySpace();
+				VerifyCommand();
 			}
 		}
 		else if (ch == STK_READ_PAGE)
@@ -634,24 +666,25 @@ void FlashLoader()
 			// Offset the read by the program flash start address
 			memAddress = (uint8_t *)(address + PROGFLASH_START);
 
-			xlen = getch();
-			length = getch() | (xlen << 8);
-			getch();
-			verifySpace();
+			xlen = GetChar();
+			length = GetChar() | (xlen << 8);
+			GetChar();
+			VerifyCommand();
 			do
 			{
-				putch(*memAddress++);
+				PutChar(*memAddress++);
 			} while (--length);
 		}
 		else
 		{
-			verifySpace();
+			VerifyCommand();
 		}
-		if (NotSynced)
+		if (notSynced)
 		{
 			continue;
 		}
-		putch(STK_OK);
+
+		PutChar(STK_OK);
 	}
 }
 
@@ -682,6 +715,7 @@ void loop()
 	// Launch the Multi firmware if there's a valid application to launch
 	if (CheckForApplication())
 	{
+		// Jump to the application code at PROGFLASH_START
 		JumpToApplication();
 	}
 }
