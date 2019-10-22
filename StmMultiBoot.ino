@@ -70,16 +70,12 @@ extern "C" {
 // Initializes Timer without using HAL functions
 static void Timer_Init()
 {
-	__HAL_RCC_TIM2_CLK_ENABLE();
-
+	__HAL_RCC_TIM2_CLK_ENABLE();	// Enable the clock
 	TIM2->CNT = 0;					// Zero the count
-	TIM2->PSC = 959;				// Prescaler
-	TIM2->ARR = 4999;				// Period
-	TIM2->RCR = 0;
+	TIM2->PSC = 479;				// Prescaler
+	TIM2->ARR = 9999;				// Period
 	TIM2->DIER = TIM_DIER_UIE;		// Update interrupt enable
 	TIM2->CR1 |= TIM_CR1_CEN;		// Enable the timer
-
-	HAL_NVIC_SetPriority(TIM2_IRQn, 0, 0);
 	HAL_NVIC_EnableIRQ(TIM2_IRQn);	// Enable interrupts from TIM2
 }
 
@@ -103,8 +99,8 @@ static void GPIO_Init()
 	GPIO_InitStruct.Pull = GPIO_PULLUP;
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-	// Configure PA1 as output (LED)
-	GPIO_InitStruct.Pin = GPIO_PIN_1;
+	// Configure PA1 and PA1 as outputs (red and green LEDs)
+	GPIO_InitStruct.Pin = GPIO_PIN_1 | GPIO_PIN_2;
 	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
