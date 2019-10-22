@@ -15,59 +15,39 @@
 #include "StmMultiBoot.h"
 #include "stk500.h"
 
- // Signature bytes used for uploads from AVRDUDE - tell it we're an Atmega128
-#define SIGNATURE_0		0x1E
-#define SIGNATURE_1		0x55
-#define SIGNATURE_2		0xAA
-#define SIGNATURE_3		0x97
-#define SIGNATURE_4		0x02
-
-// Version numbers
-#define OPTIBOOT_MAJVER 4
-#define OPTIBOOT_MINVER 7
-
-// Macro to toggle the LED
-#define __MULTI_TOGGLE_LED() HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1)
-
-// Structure for configuring GPIO pins
-GPIO_InitTypeDef GPIO_InitStruct;
-
-// Structure for erasing flash pages
-FLASH_EraseInitTypeDef EraseInitStruct;
-
-// Boundaries of program flash space
-#ifdef STM32F103xB
-#define PROGFLASH_START (uint32_t)0x08002000
-#define EEPROM_START (uint32_t)0x0801F800
-#define RAM_SIZE (uint32_t)0x00005000
-#endif
-#ifdef STM32F303xC
-#define PROGFLASH_START (uint32_t)0x08002000
-#define EEPROM_START (uint32_t)0x0803F800
-#define RAM_SIZE (uint32_t)0x0000A000
-#endif
-
-#define PROGFLASH_SIZE = EEPROM_START - PROGFLASH_START - 1
-
-uint32_t ResetReason;
-uint32_t LongCount;
+// Buffer for serial read/write operations
 uint8_t Buff[512];
 
+// Flag to indicate STK sync status
 uint8_t NotSynced;
+
+// Counter for STK SYNC packets
 uint8_t SyncCount;
+
+// Flag to indicate active serial port(s); 0 = USART2 + USART3; 1 = USART1
 uint8_t Port;
 
-// Timer 2 interrupt handle
+/* 
+ * Timer 2 interrupt handler override
+ * Update interrupts are used to flash the red LED when the bootloader is active.
+ */
 extern "C" {
 	void TIM2_IRQHandler(void) {
+		// Handle update interrupts (update interrupt flag is set)
 		if (TIM2->SR & TIM_SR_UIF) {
+			// Reset the update interrupt flag
 			TIM2->SR &= ~(TIM_SR_UIF);
+			
+			// Toggle the LED
 			HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1);
 		}
 	}
 }
 
-// Initializes Timer without using HAL functions
+/*
+ * Initializes Timer 2
+ * Configures TIM2 without using the HAL functions so that we can redefine the IRQ handler and keep the bootloader size down.
+ */
 static void Timer_Init()
 {
 	__HAL_RCC_TIM2_CLK_ENABLE();	// Enable the clock
@@ -79,9 +59,12 @@ static void Timer_Init()
 	HAL_NVIC_EnableIRQ(TIM2_IRQn);	// Enable interrupts from TIM2
 }
 
-/* Initializes the GPIO pins */
+/* Initializes the GPIO pins for inputs, outputs, and USARTs */
 static void GPIO_Init()
 {
+	// Structure for configuring GPIO pins
+	GPIO_InitTypeDef GPIO_InitStruct;
+
 	// Enable the clocks
 	__HAL_RCC_GPIOA_CLK_ENABLE();
 	__HAL_RCC_GPIOB_CLK_ENABLE();
@@ -90,7 +73,7 @@ static void GPIO_Init()
 	__HAL_RCC_AFIO_CLK_ENABLE();		// The AFIO clock only exists on the F103
 #endif
 
-// Set PA0, 4-7 (HIGH)
+	// Set PA0, 4-7 (HIGH)
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0 | GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7, GPIO_PIN_SET);
 
 	// Configure pins PA0, 4-7 as inputs - PA0 is BIND button, PA4-7 are the rotary dial
@@ -99,7 +82,7 @@ static void GPIO_Init()
 	GPIO_InitStruct.Pull = GPIO_PULLUP;
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-	// Configure PA1 and PA1 as outputs (red and green LEDs)
+	// Configure PA1 and PA2 as outputs (red and green LEDs)
 	GPIO_InitStruct.Pin = GPIO_PIN_1 | GPIO_PIN_2;
 	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -109,6 +92,30 @@ static void GPIO_Init()
 	GPIO_InitStruct.Pin = GPIO_PIN_1 | GPIO_PIN_3;
 	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+	// Start with the serial inverter disabled - set PB1 and clear PB3 
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
+
+	// Configure PA9 as alternate function USART2_RX (USART2_TX=PA2, USART2_RX=PA9 - only RX (PA9) is used)
+	GPIO_InitStruct.Pin = GPIO_PIN_9;
+	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+	GPIO_InitStruct.Pull = GPIO_PULLUP;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
+#ifdef STM32F303xC
+	GPIO_InitStruct.Alternate = GPIO_AF7_USART2;
+#endif
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+	// Configure PB10 as alternate function USART3_TX (USART3_TX=PB10, USART3_RX=PB11 - only TX (PB10) is used)
+	GPIO_InitStruct.Pin = GPIO_PIN_10;
+	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+	GPIO_InitStruct.Pull = GPIO_PULLUP;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
+#ifdef STM32F303xC
+	GPIO_InitStruct.Alternate = GPIO_AF7_USART3;
+#endif
 	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
 	// Disable JTAG
@@ -124,32 +131,6 @@ static void Serial_Init()
 	__HAL_RCC_USART2_CLK_ENABLE();
 	__HAL_RCC_USART3_CLK_ENABLE();
 
-	// USART2 - TX=PA2, RX=PA9 - only RX is used 
-	// Configure PA9 as alternate function USART2_RX
-	GPIO_InitStruct.Pin = GPIO_PIN_9;
-	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-	GPIO_InitStruct.Pull = GPIO_PULLUP;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
-
-#ifdef STM32F303xC
-	GPIO_InitStruct.Alternate = GPIO_AF7_USART2;
-#endif
-
-	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-	// USART3 - TX=PB10, RX=PB11 - only TX is used
-	// Configure PB10 as alternate function USART3_TX
-	GPIO_InitStruct.Pin = GPIO_PIN_10;
-	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-	GPIO_InitStruct.Pull = GPIO_PULLUP;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
-
-#ifdef STM32F303xC
-	GPIO_InitStruct.Alternate = GPIO_AF7_USART3;
-#endif
-
-	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
 	// Set the baud rates and configure the ports
 	USART1->BRR = 72000000 / 57600;
 	USART1->CR1 = 0x200C;
@@ -161,9 +142,6 @@ static void Serial_Init()
 	USART3->CR1 = 0x200C;
 	USART3->CR2 = 0;
 	USART3->CR3 = 0;
-
-	// Start with the serial inverter disabled
-	DisableSerialInverter();
 }
 
 /* Disables the hardware serial port inverter */
@@ -186,25 +164,27 @@ static void EnableSerialInverter()
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_SET);
 }
 
+/* Toggles the hardware serial port inverter */
+static void ToggleSerialInverter()
+{
+	// Toggle PB3
+	HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_3);
+}
+
 /* Checks the state of the BIND button */
 static uint32_t CheckForBindButton()
 {
-	uint8_t ch;
-	ch = GPIOA->IDR & 0xF1;
-	return (ch != 0xF0) ? 0 : 1;
+	return ((GPIOA->IDR & 0xF1) != 0xF0) ? 0 : 1;
 }
 
 /* Returns 1 if the device was reset via a software request, 0 for any other reset reason */
 static uint32_t SoftwareResetReason()
 {
-	// Get the reset reason
-	ResetReason = RCC->CSR;
-
 	// Clear the reset flag
 	RCC->CSR |= RCC_CSR_RMVF;
 
 	// Return 1 for a software reset, otherwise 0
-	return (ResetReason & RCC_CSR_SFTRSTF) ? 1 : 0;
+	return (RCC->CSR & RCC_CSR_SFTRSTF) ? 1 : 0;
 }
 
 /* Disables interrupts */
@@ -428,7 +408,7 @@ void bgetNch(uint8_t count)
 }
 
 // Main bootloader routine
-void Bootloader()
+void FlashLoader()
 {
 	uint8_t ch;
 	uint8_t GPIOR0;
@@ -519,10 +499,7 @@ void Bootloader()
 			}
 			else
 			{
-				/*
-				* GET PARAMETER returns a generic 0x03 reply for
-				* other parameters - enough to keep Avrdude happy
-				*/
+				// Return a generic 0x03 reply to keep AVRDUDE happy
 				putch(0x03);
 			}
 		}
@@ -575,13 +552,17 @@ void Bootloader()
 			// Unlock the flash
 			HAL_FLASH_Unlock();
 
-			// Erase the program flash space
+			// Structure for erasing flash pages
+			FLASH_EraseInitTypeDef EraseInitStruct;
 			uint32_t SectorError = 0;
+			
+			// Clear the flash flags
 			__HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_EOP | FLASH_FLAG_WRPERR | FLASH_FLAG_PGERR);
 
-			EraseInitStruct.TypeErase = FLASH_TYPEERASE_PAGES;
-			EraseInitStruct.PageAddress = (uint32_t)PROGFLASH_START;
-			EraseInitStruct.NbPages = uint32_t((EEPROM_START - PROGFLASH_START) / FLASH_PAGE_SIZE);
+			// Configure the erase
+			EraseInitStruct.TypeErase = FLASH_TYPEERASE_PAGES;											// Erase pages (not a mass erase)
+			EraseInitStruct.PageAddress = (uint32_t)PROGFLASH_START;									// Start erase at the first page of program flash (preserve the bootloader and EEPROM pages)
+			EraseInitStruct.NbPages = uint32_t((EEPROM_START - PROGFLASH_START) / FLASH_PAGE_SIZE);		// Erase up to the EEPROM pages
 
 			// Do the erase
 			HAL_FLASHEx_Erase(&EraseInitStruct, &SectorError);
@@ -694,7 +675,7 @@ void loop()
 	if (SoftwareResetReason() || CheckForBindButton() || !CheckForApplication())
 	{
 		// Run the main bootloader routine
-		Bootloader();
+		FlashLoader();
 	}
 
 	// Launch the Multi firmware if there's a valid application to launch

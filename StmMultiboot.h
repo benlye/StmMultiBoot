@@ -15,10 +15,35 @@
 #ifndef __STMMULTIBOOT_H
 #define __STMMULTIBOOT_H
 
+ // Bytes for the device signature we return to AVRDUDE
+#define SIGNATURE_0		0x1E
+#define SIGNATURE_1		0x55
+#define SIGNATURE_2		0xAA
+#define SIGNATURE_3		0x97
+#define SIGNATURE_4		0x02
+
+// Version numbers
+#define OPTIBOOT_MAJVER 4
+#define OPTIBOOT_MINVER 7
+
+// Boundaries of program flash space, EEPROM space, and RAM - varies by MCU
+#define PROGFLASH_START (uint32_t)0x08002000
+#ifdef STM32F103xB
+#define EEPROM_START (uint32_t)0x0801F800
+#define RAM_SIZE (uint32_t)0x00005000
+#endif
+#ifdef STM32F303xC
+#define EEPROM_START (uint32_t)0x0803F800
+#define RAM_SIZE (uint32_t)0x0000A000
+#endif
+#define PROGFLASH_SIZE = EEPROM_START - PROGFLASH_START - 1
+
+// Verify that the correct board is selected
 #if (!defined(STM32F103xB) && !defined(ARDUINO_BLUEPILL_F103C8)) && (!defined(STM32F303xC) && !defined(ARDUINO_BLACKPILL_F303CC))
   #error "Board must be 'Generic STM32F1 series -> BluePill F103C8 (128K)' or 'Generic STM32F3 series -> RobotDyn BlackPill F303CC'"
 #endif
 
+// Verify that seiral support is disabled in the board menu
 #ifdef HAL_UART_MODULE_ENABLED
   #error "Serial must be disabled in the Tools -> U(S)ART Support menu (in order to keep the binary under 8KB)."
 #endif
