@@ -99,6 +99,16 @@ static void GPIO_Init()
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
 
+	// Configure PA9 as alternate function for USART1 (USART1_TX=PA9, USART1_RX=PA10 )
+	GPIO_InitStruct.Pin = GPIO_PIN_9;
+	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+	GPIO_InitStruct.Pull = GPIO_PULLUP;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
+#ifdef STM32F303xC
+	GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
+#endif
+	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
 	// Configure PA3 as alternate function USART2_RX (USART2_TX=PA2, USART2_RX=PA3 - only RX (PA3) is used)
 	GPIO_InitStruct.Pin = GPIO_PIN_3;
 	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
@@ -500,7 +510,7 @@ void FlashLoader()
 		}
 
 		// Toggle serial port inversion if we get five STK_GET_SYNCs in a row
-		if (syncCount > 4)
+		if (syncCount > 5)
 		{
 			/*
 			if (serialIsInverted == 1)

@@ -21,13 +21,13 @@
     <ClInclude Include="__vm\.StmMultiBoot.vsarduino.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="StmMultiboot.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="hal_conf_extra.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="stk500.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="StmMultiboot.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
