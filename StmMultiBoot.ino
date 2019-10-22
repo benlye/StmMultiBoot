@@ -280,7 +280,7 @@ void JumpToApplication(void)
 
 /*
  * Checks if USART1 has data to be read
- * If there is data, read it; if not, return 0xFFFF
+ * If there is data, read and return it; if not, return 0xFFFF
  */
 static uint16_t TestUsart1()
 {
@@ -301,7 +301,7 @@ static uint16_t TestUsart1()
 
 /* 
  * Checks if USART2 has data to be read
- * If there is data, read it; if not, return 0xFFFF
+ * If there is data, read and return it; if not, return 0xFFFF
  */
 static uint16_t TestUsart2()
 {
