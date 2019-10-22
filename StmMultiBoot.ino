@@ -1,21 +1,21 @@
-/* 
- * This program is free software: you can redistribute it and/or modify  
- * it under the terms of the GNU General Public License as published by  
+/*
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, version 3.
  *
- * This program is distributed in the hope that it will be useful, but 
- * WITHOUT ANY WARRANTY; without even the implied warranty of 
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU 
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
  * General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License 
+ * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "StmMultiBoot.h"
 #include "stk500.h"
 
-// Signature bytes used for uploads from AVRDUDE - tell it we're an Atmega128
+ // Signature bytes used for uploads from AVRDUDE - tell it we're an Atmega128
 #define SIGNATURE_0		0x1E
 #define SIGNATURE_1		0x55
 #define SIGNATURE_2		0xAA
@@ -27,26 +27,7 @@
 #define OPTIBOOT_MINVER 7
 
 // Macro to toggle the LED
-// #define __MULTI_TOGGLE_LED() HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1)
-
-// Function to the toggle the LED
-void ToggleLed()
-{
-	if (TIM2->SR & TIM_SR_UIF)
-	{
-		TIM2->SR &= ~TIM_SR_UIF;				// Clear the interrupt
-		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1);	// Toggle the LED pin
-	}
-}
-
-/*
-// Handler for TIM2 interrupts
-void TIM2_IRQHandler(void)
-{
-	TIM2->SR &= ~TIM_SR_UIF;				// Clear the interrupt
-	HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1);	// Toggle the LED pin
-}
-*/
+#define __MULTI_TOGGLE_LED() HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1)
 
 // Structure for configuring GPIO pins
 GPIO_InitTypeDef GPIO_InitStruct;
@@ -56,58 +37,50 @@ FLASH_EraseInitTypeDef EraseInitStruct;
 
 // Boundaries of program flash space
 #ifdef STM32F103xB
-	#define PROGFLASH_START (uint32_t)0x08004000
-	#define EEPROM_START (uint32_t)0x0801F800
-	#define RAM_SIZE (uint32_t)0x00005000
+#define PROGFLASH_START (uint32_t)0x08002000
+#define EEPROM_START (uint32_t)0x0801F800
+#define RAM_SIZE (uint32_t)0x00005000
 #endif
 #ifdef STM32F303xC
-	#define PROGFLASH_START (uint32_t)0x08002000
-	#define EEPROM_START (uint32_t)0x0803F800
-	#define RAM_SIZE (uint32_t)0x0000A000
+#define PROGFLASH_START (uint32_t)0x08002000
+#define EEPROM_START (uint32_t)0x0803F800
+#define RAM_SIZE (uint32_t)0x0000A000
 #endif
 
 #define PROGFLASH_SIZE = EEPROM_START - PROGFLASH_START - 1
 
-uint8_t Buff[512] ;
+uint32_t ResetReason;
+uint32_t LongCount;
+uint8_t Buff[512];
 
-uint8_t NotSynced ;
-uint8_t SyncCount ;
-uint8_t Port ;
+uint8_t NotSynced;
+uint8_t SyncCount;
+uint8_t Port;
 
-/*
-// Handle for TIM2
-static TIM_HandleTypeDef Timer2Handle = {
-	.Instance = TIM2
-};
-
-// Initializes the Timer
-static void Timer_Init()
-{	
-	// Start the clock
-	__HAL_RCC_TIM2_CLK_ENABLE();
-	
-	// 72000000 / ((479+1)*(9999+1)) = 15Hz
-	Timer2Handle.Init.Prescaler = 479;
-	Timer2Handle.Init.Period = 9999;
-	Timer2Handle.Init.CounterMode = TIM_COUNTERMODE_UP;
-	Timer2Handle.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-	Timer2Handle.Init.RepetitionCounter = 0;
-	HAL_TIM_Base_Init(&Timer2Handle);
-	HAL_TIM_Base_Start(&Timer2Handle);
+// Timer 2 interrupt handle
+extern "C" {
+	void TIM2_IRQHandler(void) {
+		if (TIM2->SR & TIM_SR_UIF) {
+			TIM2->SR &= ~(TIM_SR_UIF);
+			HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_1);
+		}
+	}
 }
-*/
 
-// Initializes the Timer without using HAL functions
+// Initializes Timer without using HAL functions
 static void Timer_Init()
 {
+	__HAL_RCC_TIM2_CLK_ENABLE();
+
 	TIM2->CNT = 0;					// Zero the count
-	TIM2->PSC = 479;				// Prescaler
+	TIM2->PSC = 959;				// Prescaler
 	TIM2->ARR = 4999;				// Period
+	TIM2->RCR = 0;
 	TIM2->DIER = TIM_DIER_UIE;		// Update interrupt enable
 	TIM2->CR1 |= TIM_CR1_CEN;		// Enable the timer
-	
-	// This line might only be needed for interrupt handling
-	// HAL_NVIC_EnableIRQ(TIM2_IRQn);	// Enable interrupts from TIM2
+
+	HAL_NVIC_SetPriority(TIM2_IRQn, 0, 0);
+	HAL_NVIC_EnableIRQ(TIM2_IRQn);	// Enable interrupts from TIM2
 }
 
 /* Initializes the GPIO pins */
@@ -116,12 +89,12 @@ static void GPIO_Init()
 	// Enable the clocks
 	__HAL_RCC_GPIOA_CLK_ENABLE();
 	__HAL_RCC_GPIOB_CLK_ENABLE();
-	
-	#ifdef __HAL_RCC_AFIO_CLK_ENABLE
-		__HAL_RCC_AFIO_CLK_ENABLE();		// The AFIO clock only exists on the F103
-	#endif
 
-	// Set PA0, 4-7 (HIGH)
+#ifdef __HAL_RCC_AFIO_CLK_ENABLE
+	__HAL_RCC_AFIO_CLK_ENABLE();		// The AFIO clock only exists on the F103
+#endif
+
+// Set PA0, 4-7 (HIGH)
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0 | GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7, GPIO_PIN_SET);
 
 	// Configure pins PA0, 4-7 as inputs - PA0 is BIND button, PA4-7 are the rotary dial
@@ -142,11 +115,9 @@ static void GPIO_Init()
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
 	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-	// Disable JTAG on the STM32F103 only (not needed on STM32F303)
-	#ifdef STM32F103xB
-		//__HAL_AFIO_REMAP_SWJ_DISABLE();		// Disable JTAG and SWD - use for released version
-		__HAL_AFIO_REMAP_SWJ_NOJTAG();			// Disable JTAG but keep SWD enabled - use for development/debugging
-	#endif
+	// Disable JTAG
+	//__HAL_AFIO_REMAP_SWJ_DISABLE();		// Disable JTAG and SWD - use for released version
+	__HAL_AFIO_REMAP_SWJ_NOJTAG();			// Disable JTAG but keep SWD enabled - use for development/debugging
 }
 
 /* Initializes the serial ports */
@@ -164,9 +135,9 @@ static void Serial_Init()
 	GPIO_InitStruct.Pull = GPIO_PULLUP;
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
 
-	#ifdef STM32F303xC
-		GPIO_InitStruct.Alternate = GPIO_AF7_USART2;
-	#endif
+#ifdef STM32F303xC
+	GPIO_InitStruct.Alternate = GPIO_AF7_USART2;
+#endif
 
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
@@ -177,9 +148,9 @@ static void Serial_Init()
 	GPIO_InitStruct.Pull = GPIO_PULLUP;
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
 
-	#ifdef STM32F303xC
-		GPIO_InitStruct.Alternate = GPIO_AF7_USART3;
-	#endif
+#ifdef STM32F303xC
+	GPIO_InitStruct.Alternate = GPIO_AF7_USART3;
+#endif
 
 	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
@@ -195,7 +166,13 @@ static void Serial_Init()
 	USART3->CR2 = 0;
 	USART3->CR3 = 0;
 
-	/* Start with the serial inverter disabled */
+	// Start with the serial inverter disabled
+	DisableSerialInverter();
+}
+
+/* Disables the hardware serial port inverter */
+static void DisableSerialInverter()
+{
 	// Set PB1 (HIGH)
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
 
@@ -203,68 +180,74 @@ static void Serial_Init()
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
 }
 
-/* Toggles the state of the hardware serial port inverter */
-static void ToggleSerialInverter()
+/* Enables the hardware serial port inverter */
+static void EnableSerialInverter()
 {
-	// Toggle PB3
-	HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_3);
+	// Set PB1 (HIGH)
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
+
+	// Set PB3 (HIGH)
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_SET);
 }
 
 /* Checks the state of the BIND button */
 static uint32_t CheckForBindButton()
 {
-	//uint8_t ch;
-	//ch = GPIOA->IDR & 0xF1;
-	return ((GPIOA->IDR & 0xF1) != 0xF0) ? 0 : 1;
+	uint8_t ch;
+	ch = GPIOA->IDR & 0xF1;
+	return (ch != 0xF0) ? 0 : 1;
 }
 
 /* Returns 1 if the device was reset via a software request, 0 for any other reset reason */
 static uint32_t SoftwareResetReason()
 {
+	// Get the reset reason
+	ResetReason = RCC->CSR;
+
 	// Clear the reset flag
 	RCC->CSR |= RCC_CSR_RMVF;
 
 	// Return 1 for a software reset, otherwise 0
-	return (RCC->CSR & RCC_CSR_SFTRSTF) ? 1 : 0;
+	return (ResetReason & RCC_CSR_SFTRSTF) ? 1 : 0;
 }
 
 /* Disables interrupts */
 void DisableInterrupts()
 {
-	__disable_irq() ;
-	HAL_NVIC_DisableIRQ(USART1_IRQn) ;
-	HAL_NVIC_DisableIRQ(USART2_IRQn) ;
-	HAL_NVIC_DisableIRQ(USART3_IRQn) ;
+	//__disable_irq();
+	HAL_NVIC_DisableIRQ(USART1_IRQn);
+	HAL_NVIC_DisableIRQ(USART2_IRQn);
+	HAL_NVIC_DisableIRQ(USART3_IRQn);
 
 	// Disable STM32F103-only interrupts
-	#ifdef STM32F103xB
-		HAL_NVIC_DisableIRQ(TIM1_BRK_IRQn) ;
-		HAL_NVIC_DisableIRQ(TIM1_CC_IRQn) ;
-		HAL_NVIC_DisableIRQ(TIM1_UP_IRQn) ;
-		HAL_NVIC_DisableIRQ(TIM1_TRG_COM_IRQn) ;
-	#endif
+#ifdef STM32F103xB
+	HAL_NVIC_DisableIRQ(TIM1_BRK_IRQn);
+	HAL_NVIC_DisableIRQ(TIM1_CC_IRQn);
+	HAL_NVIC_DisableIRQ(TIM1_UP_IRQn);
+	HAL_NVIC_DisableIRQ(TIM1_TRG_COM_IRQn);
+#endif
 
 	// Disable STM32F303-only interrupts
-	#ifdef STM32F303xC
-		HAL_NVIC_DisableIRQ(TIM1_BRK_TIM15_IRQn) ;
-		HAL_NVIC_DisableIRQ(TIM1_UP_TIM16_IRQn) ;
-		HAL_NVIC_DisableIRQ(TIM1_TRG_COM_TIM17_IRQn) ;
-		HAL_NVIC_DisableIRQ(TIM1_CC_IRQn) ;
-		HAL_NVIC_DisableIRQ(TIM6_DAC_IRQn) ;
-		HAL_NVIC_DisableIRQ(TIM7_IRQn) ;
-		HAL_NVIC_DisableIRQ(TIM8_BRK_IRQn) ;
-		HAL_NVIC_DisableIRQ(TIM8_CC_IRQn) ;
-		HAL_NVIC_DisableIRQ(TIM8_UP_IRQn) ;
-		HAL_NVIC_DisableIRQ(TIM8_TRG_COM_IRQn) ;
-		HAL_NVIC_DisableIRQ(ADC4_IRQn) ;
-		HAL_NVIC_DisableIRQ(UART4_IRQn) ;
-		HAL_NVIC_DisableIRQ(UART5_IRQn) ;
-	#endif
+#ifdef STM32F303xC
+	HAL_NVIC_DisableIRQ(TIM1_BRK_TIM15_IRQn);
+	HAL_NVIC_DisableIRQ(TIM1_UP_TIM16_IRQn);
+	HAL_NVIC_DisableIRQ(TIM1_TRG_COM_TIM17_IRQn);
+	HAL_NVIC_DisableIRQ(TIM1_CC_IRQn);
+	HAL_NVIC_DisableIRQ(TIM6_DAC_IRQn);
+	HAL_NVIC_DisableIRQ(TIM7_IRQn);
+	HAL_NVIC_DisableIRQ(TIM8_BRK_IRQn);
+	HAL_NVIC_DisableIRQ(TIM8_CC_IRQn);
+	HAL_NVIC_DisableIRQ(TIM8_UP_IRQn);
+	HAL_NVIC_DisableIRQ(TIM8_TRG_COM_IRQn);
+	HAL_NVIC_DisableIRQ(ADC4_IRQn);
+	HAL_NVIC_DisableIRQ(UART4_IRQn);
+	HAL_NVIC_DisableIRQ(UART5_IRQn);
+#endif
 
-	HAL_NVIC_DisableIRQ(TIM3_IRQn) ;
-	HAL_NVIC_DisableIRQ(TIM4_IRQn) ;
-	HAL_NVIC_DisableIRQ(ADC1_2_IRQn) ;
-	SysTick->CTRL = 0 ;
+	HAL_NVIC_DisableIRQ(TIM3_IRQn);
+	HAL_NVIC_DisableIRQ(TIM4_IRQn);
+	HAL_NVIC_DisableIRQ(ADC1_2_IRQn);
+	SysTick->CTRL = 0;
 }
 
 /* Checks for a valid pointer at the beginning of the application flash space */
@@ -290,7 +273,6 @@ void JumpToApplication(void)
 	RCC->APB1ENR &= ~RCC_APB1ENR_USART3EN;
 
 	// Disable the timer
-	// HAL_TIM_Base_Stop(&Timer2Handle);
 	TIM2->CR1 &= ~TIM_CR1_CEN;
 
 	// Clear any interrupts
@@ -319,146 +301,114 @@ void JumpToApplication(void)
 /* Checks if USART2 has data to be read; reads it */
 static uint16_t test0()
 {
-	#ifdef STM32F103xB
-		if ( USART2->SR & USART_SR_RXNE )
-		{
-			return USART2->DR ;
-		}
-	#endif
-	#ifdef STM32F303xC
-		if ( USART2->ISR & USART_ISR_RXNE )
-		{
-			return USART2->RDR ;
-		}
-	#endif
-	return 0xFFFF ;
+#ifdef STM32F103xB
+	if (USART2->SR & USART_SR_RXNE)
+	{
+		return USART2->DR;
+	}
+#endif
+#ifdef STM32F303xC
+	if (USART2->ISR & USART_ISR_RXNE)
+	{
+		return USART2->RDR;
+	}
+#endif
+	return 0xFFFF;
 }
 
 /* Checks if USART1 has data to be read; reads it */
 static uint16_t test1()
 {
-	#ifdef STM32F103xB
-		if ( USART1->SR & USART_SR_RXNE )
-		{
-			return USART1->DR ;
-		}
-	#endif
-	#ifdef STM32F303xC
-		if ( USART1->ISR & USART_ISR_RXNE )
-		{
-			return USART1->RDR ;
-		}
-	#endif
-	return 0xFFFF ;
+#ifdef STM32F103xB
+	if (USART1->SR & USART_SR_RXNE)
+	{
+		return USART1->DR;
+	}
+#endif
+#ifdef STM32F303xC
+	if (USART1->ISR & USART_ISR_RXNE)
+	{
+		return USART1->RDR;
+	}
+#endif
+	return 0xFFFF;
 }
 
 uint8_t getch1()
 {
-	#ifdef STM32F103xB
-		while ( ( USART1->SR & USART_SR_RXNE ) == 0 )
-		{
-			/*
-			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
-			{
-				__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
-				__MULTI_TOGGLE_LED();
-			}
-			*/
-			ToggleLed();
-			// wait
-		}
-		return USART1->DR ;
-	#endif
-	#ifdef STM32F303xC
-		while ( ( USART1->ISR & USART_ISR_RXNE ) == 0 )
-		{
-			/*
-			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
-			{
-				__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
-				__MULTI_TOGGLE_LED();
-			}
-			*/
-			ToggleLed();
-			// wait
-		}
-		return USART1->RDR ;
-	#endif
+#ifdef STM32F103xB
+	while ((USART1->SR & USART_SR_RXNE) == 0)
+	{
+		// wait
+	}
+	return USART1->DR;
+#endif
+#ifdef STM32F303xC
+	while ((USART1->ISR & USART_ISR_RXNE) == 0)
+	{
+		// wait
+	}
+	return USART1->RDR;
+#endif
 }
 
 uint8_t getch()
 {
-	if ( Port )
+	if (Port)
 	{
-		return getch1() ;
+		return getch1();
 	}
-	#ifdef STM32F103xB
-		while ( ( USART2->SR & USART_SR_RXNE ) == 0 )
-		{
-			/*
-			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
-			{
-				__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
-				__MULTI_TOGGLE_LED();
-			}
-			*/
-			ToggleLed();
-			// wait
-		}
-		return USART2->DR ;
-	#endif
-		#ifdef STM32F303xC
-		while ( ( USART2->ISR & USART_ISR_RXNE ) == 0 )
-		{
-			/*
-			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
-			{
-				__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
-				__MULTI_TOGGLE_LED();
-			}
-			*/
-			ToggleLed();
-			// wait
-		}
-		return USART2->RDR ;
-	#endif
+#ifdef STM32F103xB
+	while ((USART2->SR & USART_SR_RXNE) == 0)
+	{
+		// wait
+	}
+	return USART2->DR;
+#endif
+#ifdef STM32F303xC
+	while ((USART2->ISR & USART_ISR_RXNE) == 0)
+	{
+		// wait
+	}
+	return USART2->RDR;
+#endif
 }
 
-void putch( uint8_t byte )
+void putch(uint8_t byte)
 {
-	if ( Port )
+	if (Port)
 	{
-		#ifdef STM32F103xB
-			while ( ( USART1->SR & USART_SR_TXE ) == 0 )
-			{
-				// wait
-			}
-			USART1->DR = byte ;
-		#endif
-		#ifdef STM32F303xC
-			while ( ( USART1->ISR & USART_ISR_TXE ) == 0 )
-			{
-				// wait
-			}
-			USART1->RDR = byte ;
-		#endif
+#ifdef STM32F103xB
+		while ((USART1->SR & USART_SR_TXE) == 0)
+		{
+			// wait
+		}
+		USART1->DR = byte;
+#endif
+#ifdef STM32F303xC
+		while ((USART1->ISR & USART_ISR_TXE) == 0)
+		{
+			// wait
+		}
+		USART1->RDR = byte;
+#endif
 	}
 	else
 	{
-		#ifdef STM32F103xB
-			while ( ( USART3->SR & USART_SR_TXE ) == 0 )
-			{
-				// wait
-			}
-			USART3->DR = byte ;
-		#endif
-		#ifdef STM32F303xC
-			while ( ( USART3->ISR & USART_ISR_TXE ) == 0 )
-			{
-				// wait
-			}
-			USART3->RDR = byte ;
-		#endif
+#ifdef STM32F103xB
+		while ((USART3->SR & USART_SR_TXE) == 0)
+		{
+			// wait
+		}
+		USART3->DR = byte;
+#endif
+#ifdef STM32F303xC
+		while ((USART3->ISR & USART_ISR_TXE) == 0)
+		{
+			// wait
+		}
+		USART3->RDR = byte;
+#endif
 	}
 }
 
@@ -466,8 +416,8 @@ void verifySpace()
 {
 	if (getch() != CRC_EOP)
 	{
-		NotSynced = 1 ;
-		return ;
+		NotSynced = 1;
+		return;
 	}
 	putch(STK_INSYNC);
 }
@@ -476,98 +426,100 @@ void bgetNch(uint8_t count)
 {
 	do
 	{
-		getch() ;
-	} while (--count) ;
-	verifySpace() ;
+		getch();
+	} while (--count);
+	verifySpace();
 }
 
 // Main bootloader routine
-void FlashLoader()
+void Bootloader()
 {
-	uint8_t ch ;
-	uint8_t GPIOR0 ;
-	uint32_t address = 0 ;
-	uint8_t lastCh ;
+	uint8_t ch;
+	uint8_t GPIOR0;
+	uint32_t address = 0;
+	uint8_t lastCh;
+	uint8_t serialIsInverted = 0;
 
 	// Disable the interrupts
-	DisableInterrupts() ;
+	DisableInterrupts();
 
-	NotSynced = 1 ;
+	NotSynced = 1;
 	SyncCount = 0;
-	lastCh = 0 ;
+	lastCh = 0;
 
-	for ( ;; )
+	for (;; )
 	{
-		while ( NotSynced )
+		while (NotSynced)
 		{
-			uint16_t data ;
+			uint16_t data;
 
-			data = test0() ;
-			if ( data != 0xFFFF )
+			data = test0();
+			if (data != 0xFFFF)
 			{
-				ch = data ;
-				if ( ( lastCh == STK_GET_SYNC ) && ( ch == CRC_EOP ) )
+				ch = data;
+				if ((lastCh == STK_GET_SYNC) && (ch == CRC_EOP))
 				{
-					NotSynced = 0 ;
-					Port = 0 ;
-					break ;
+					NotSynced = 0;
+					Port = 0;
+					break;
 				}
-				lastCh = ch ; 
+				lastCh = ch;
 			}
 
-			data = test1() ;
-			if ( data != 0xFFFF )
+			data = test1();
+			if (data != 0xFFFF)
 			{
-				ch = data ;
-				if ( ( lastCh == STK_GET_SYNC ) && ( ch == CRC_EOP ) )
+				ch = data;
+				if ((lastCh == STK_GET_SYNC) && (ch == CRC_EOP))
 				{
-					NotSynced = 0 ;
-					Port = 1 ;
-					break ;
+					NotSynced = 0;
+					Port = 1;
+					break;
 				}
-				lastCh = ch ; 
+				lastCh = ch;
 			}
-
-			/*
-			if (__HAL_TIM_GET_FLAG(&Timer2Handle, TIM_FLAG_UPDATE) != RESET)
-			{
-				__HAL_TIM_CLEAR_IT(&Timer2Handle, TIM_IT_UPDATE);
-				__MULTI_TOGGLE_LED();
-			}
-			*/
-			ToggleLed();
 		}
-		
+
 		/* get character from UART */
-		ch = getch() ;
+		ch = getch();
 
 		// Count the number of STK_GET_SYNCs
 		if (ch == STK_GET_SYNC)
 		{
-			// Toggle serial port inversion and reset the counter if we get five STK_GET_SYNCs in a row
-			if (++SyncCount > 5)
-			{
-				ToggleSerialInverter();
-				SyncCount = 0;
-			}
+			SyncCount += 1;
 		}
 		else
 		{
-			// Got something other than a SYNC - reset the counter
 			SyncCount = 0;
 		}
 
-		if(ch == STK_GET_PARAMETER)
+		// Toggle serial port inversion if we get five STK_GET_SYNCs in a row
+		if (SyncCount > 5)
 		{
-			GPIOR0 = getch() ;
-			verifySpace() ;
+			if (serialIsInverted == 1)
+			{
+				DisableSerialInverter();
+				serialIsInverted = 0;
+			}
+			else
+			{
+				EnableSerialInverter();
+				serialIsInverted = 1;
+			}
+			SyncCount = 0;
+		}
+
+		if (ch == STK_GET_PARAMETER)
+		{
+			GPIOR0 = getch();
+			verifySpace();
 			if (GPIOR0 == 0x82)
 			{
-				putch(OPTIBOOT_MINVER) ;
+				putch(OPTIBOOT_MINVER);
 			}
 			else if (GPIOR0 == 0x81)
 			{
-				putch(OPTIBOOT_MAJVER) ;
+				putch(OPTIBOOT_MAJVER);
 			}
 			else
 			{
@@ -575,15 +527,15 @@ void FlashLoader()
 				* GET PARAMETER returns a generic 0x03 reply for
 				* other parameters - enough to keep Avrdude happy
 				*/
-				putch(0x03) ;
+				putch(0x03);
 			}
 		}
-		else if(ch == STK_SET_DEVICE)
+		else if (ch == STK_SET_DEVICE)
 		{
 			// SET DEVICE is ignored
-			bgetNch(20) ;
+			bgetNch(20);
 		}
-	    else if(ch == STK_SET_DEVICE_EXT)
+		else if (ch == STK_SET_DEVICE_EXT)
 		{
 			// SET DEVICE EXT is ignored
 			bgetNch(5);
@@ -594,15 +546,15 @@ void FlashLoader()
 			bgetNch(4);
 			putch(0x00);
 		}
-		else if(ch == STK_LOAD_ADDRESS)
+		else if (ch == STK_LOAD_ADDRESS)
 		{
 			// LOAD ADDRESS
-			uint16_t newAddress ;
-			newAddress = getch() ;
+			uint16_t newAddress;
+			newAddress = getch();
 			newAddress = (newAddress & 0xff) | (getch() << 8);
-			address = newAddress ; // Convert from word address to byte address
-			address <<= 1 ;
-			verifySpace() ;
+			address = newAddress; // Convert from word address to byte address
+			address <<= 1;
+			verifySpace();
 		}
 		else if (ch == STK_READ_SIGN)
 		{
@@ -645,35 +597,34 @@ void FlashLoader()
 			// Lock the flash
 			HAL_FLASH_Lock();
 		}
-		else if(ch == STK_PROG_PAGE)
+		else if (ch == STK_PROG_PAGE)
 		{
 			// PROGRAM PAGE - we support flash programming only, not EEPROM
 			uint8_t *bufPtr;
-			uint16_t length ;
-			uint16_t count ;
-			uint16_t data ;
-			uint8_t *memAddress ;
-			length = getch() << 8 ;
-			length |= getch() ;
-			getch() ;	// discard flash/eeprom byte
+			uint16_t length;
+			uint16_t count;
+			uint16_t data;
+			uint8_t *memAddress;
+			length = getch() << 8;
+			length |= getch();
+			getch();	// discard flash/eeprom byte
 			// While that is going on, read in page contents
-			count = length ;
+			count = length;
 			bufPtr = Buff;
 			do
 			{
-				*bufPtr++ = getch() ;
-			}
-			while (--count) ;
-			if ( length & 1 )
+				*bufPtr++ = getch();
+			} while (--count);
+			if (length & 1)
 			{
-				*bufPtr = 0xFF ;
+				*bufPtr = 0xFF;
 			}
-			count = length ;
-			count += 1 ;
-			count /= 2 ;
+			count = length;
+			count += 1;
+			count /= 2;
 
 			// Offset the write by the program flash start address
-			memAddress = (uint8_t *)(address + PROGFLASH_START) ;
+			memAddress = (uint8_t *)(address + PROGFLASH_START);
 
 			// Only write to addresses that are above the bootloader and below the EEPROM
 			if ((uint32_t)memAddress >= PROGFLASH_START && (uint32_t)memAddress < EEPROM_START)
@@ -682,13 +633,13 @@ void FlashLoader()
 				verifySpace();
 
 				bufPtr = Buff;
-				while ( count )
+				while (count)
 				{
-					data = *bufPtr++ ;
-					data |= *bufPtr++ << 8 ;
+					data = *bufPtr++;
+					data |= *bufPtr++ << 8;
 					HAL_FLASH_Program(FLASH_TYPEPROGRAM_HALFWORD, (uint32_t)memAddress, data);
-					memAddress += 2 ;
-					count -= 1 ;
+					memAddress += 2;
+					count -= 1;
 				}
 			}
 			else
@@ -696,32 +647,31 @@ void FlashLoader()
 				verifySpace();
 			}
 		}
-		else if(ch == STK_READ_PAGE)
-	  	{
-			uint16_t length ;
-			uint8_t xlen ;
-			uint8_t *memAddress ;
+		else if (ch == STK_READ_PAGE)
+		{
+			uint16_t length;
+			uint8_t xlen;
+			uint8_t *memAddress;
 
 			// Offset the read by the program flash start address
-			memAddress = (uint8_t *)(address + PROGFLASH_START) ;
+			memAddress = (uint8_t *)(address + PROGFLASH_START);
 
-			xlen = getch() ;
-			length = getch() | (xlen << 8 ) ;
-			getch() ;
-		    verifySpace() ;
-	    	do
+			xlen = getch();
+			length = getch() | (xlen << 8);
+			getch();
+			verifySpace();
+			do
 			{
-				putch( *memAddress++) ;
-			}
-	    	while (--length) ;
+				putch(*memAddress++);
+			} while (--length);
 		}
 		else
 		{
-			verifySpace() ;
+			verifySpace();
 		}
-		if ( NotSynced )
+		if (NotSynced)
 		{
-			continue ;
+			continue;
 		}
 		putch(STK_OK);
 	}
@@ -748,9 +698,9 @@ void loop()
 	if (SoftwareResetReason() || CheckForBindButton() || !CheckForApplication())
 	{
 		// Run the main bootloader routine
-		FlashLoader();
+		Bootloader();
 	}
-	
+
 	// Launch the Multi firmware if there's a valid application to launch
 	if (CheckForApplication())
 	{
