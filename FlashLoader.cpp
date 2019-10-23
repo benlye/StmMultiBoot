@@ -57,7 +57,6 @@ static void ToggleSerialInverter()
 	HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_3);
 }
 
-
 /*
  * Checks if USART1 has data to be read
  * If there is data, read and return it; if not, return 0xFFFF
@@ -145,40 +144,30 @@ uint8_t GetChar()
 /* Sends a character to the serial device */
 void PutChar(uint8_t byte)
 {
+	USART_TypeDef* USART;
+
 	if (usart1Active)
 	{
-#ifdef STM32F103xB
-		while ((USART1->SR & USART_SR_TXE) == 0)
-		{
-			// wait
-		}
-		USART1->DR = byte;
-#endif
-#ifdef STM32F303xC
-		while ((USART1->ISR & USART_ISR_TXE) == 0)
-		{
-			// wait
-		}
-		USART1->RDR = byte;
-#endif
+		USART = USART1;
 	}
 	else
 	{
+		USART = USART3;
+	}
 #ifdef STM32F103xB
-		while ((USART3->SR & USART_SR_TXE) == 0)
-		{
-			// wait
-		}
-		USART3->DR = byte;
+	while ((USART->SR & USART_SR_TXE) == 0)
+	{
+		// wait
+	}
+	USART->DR = byte;
 #endif
 #ifdef STM32F303xC
-		while ((USART3->ISR & USART_ISR_TXE) == 0)
-		{
-			// wait
-		}
-		USART3->RDR = byte;
-#endif
+	while ((USART->ISR & USART_ISR_TXE) == 0)
+	{
+		// wait
 	}
+	USART->RDR = byte;
+#endif
 }
 
 /*
