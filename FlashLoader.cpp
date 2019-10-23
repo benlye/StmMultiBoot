@@ -61,39 +61,28 @@ static void ToggleSerialInverter()
  * Checks if USART1 has data to be read
  * If there is data, read and return it; if not, return 0xFFFF
  */
-static uint16_t TestUsart1()
+static uint16_t TestUsart(uint8_t port)
 {
-#ifdef STM32F103xB
-	if (USART1->SR & USART_SR_RXNE)
-	{
-		return USART1->DR;
-	}
-#endif
-#ifdef STM32F303xC
-	if (USART1->ISR & USART_ISR_RXNE)
-	{
-		return USART1->RDR;
-	}
-#endif
-	return 0xFFFF;
-}
+	USART_TypeDef* USART;
 
-/*
- * Checks if USART2 has data to be read
- * If there is data, read and return it; if not, return 0xFFFF
- */
-static uint16_t TestUsart2()
-{
-#ifdef STM32F103xB
-	if (USART2->SR & USART_SR_RXNE)
+	if (port == 1)
 	{
-		return USART2->DR;
+		USART = USART1;
+	}
+	else
+	{
+		USART = USART2;
+	}
+#ifdef STM32F103xB
+	if (USART->SR & USART_SR_RXNE)
+	{
+		return USART->DR;
 	}
 #endif
 #ifdef STM32F303xC
-	if (USART2->ISR & USART_ISR_RXNE)
+	if (USART->ISR & USART_ISR_RXNE)
 	{
-		return USART2->RDR;
+		return USART->RDR;
 	}
 #endif
 	return 0xFFFF;
@@ -214,7 +203,8 @@ void FlashLoader()
 			uint16_t data;
 
 			// Check for serial data on USART2
-			data = TestUsart2();
+			// data = TestUsart2();
+			data = TestUsart(2);
 			if (data != 0xFFFF)
 			{
 				ch = data;
@@ -228,7 +218,8 @@ void FlashLoader()
 			}
 
 			// Check for serial data on USART1
-			data = TestUsart1();
+			// data = TestUsart1();
+			data = TestUsart(1);
 			if (data != 0xFFFF)
 			{
 				ch = data;
