@@ -99,45 +99,32 @@ static uint16_t TestUsart2()
 	return 0xFFFF;
 }
 
-/* Gets a character from USART1 */
-uint8_t GetChar_1()
-{
-#ifdef STM32F103xB
-	while ((USART1->SR & USART_SR_RXNE) == 0)
-	{
-		// wait
-	}
-	return USART1->DR;
-#endif
-#ifdef STM32F303xC
-	while ((USART1->ISR & USART_ISR_RXNE) == 0)
-	{
-		// wait
-	}
-	return USART1->RDR;
-#endif
-}
-
 /* Gets a character from serial */
 uint8_t GetChar()
 {
+	USART_TypeDef* USART;
+
 	if (usart1Active)
 	{
-		return GetChar_1();
+		USART = USART1;
+	}
+	else
+	{
+		USART = USART2;
 	}
 #ifdef STM32F103xB
-	while ((USART2->SR & USART_SR_RXNE) == 0)
+	while ((USART->SR & USART_SR_RXNE) == 0)
 	{
 		// wait
 	}
-	return USART2->DR;
+	return USART->DR;
 #endif
 #ifdef STM32F303xC
-	while ((USART2->ISR & USART_ISR_RXNE) == 0)
+	while ((USART->ISR & USART_ISR_RXNE) == 0)
 	{
 		// wait
 	}
-	return USART2->RDR;
+	return USART->RDR;
 #endif
 }
 
