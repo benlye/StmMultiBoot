@@ -15,7 +15,17 @@
 #ifndef __STMMULTIBOOT_H
 #define __STMMULTIBOOT_H
 
- // Bytes for the device signature we return to AVRDUDE
+// Verify that the correct board is selected
+#if (!defined(STM32F103xB) && !defined(ARDUINO_BLUEPILL_F103C8)) && (!defined(STM32F303xC) && !defined(ARDUINO_BLACKPILL_F303CC))
+#error "Board must be 'Generic STM32F1 series -> BluePill F103C8 (128K)' or 'Generic STM32F3 series -> RobotDyn BlackPill F303CC'"
+#endif
+
+// Verify that seiral support is disabled in the board menu
+#ifdef HAL_UART_MODULE_ENABLED
+#error "Serial must be disabled in the Tools -> U(S)ART Support menu (in order to keep the binary under 8KB)."
+#endif
+
+// Bytes for the device signature we return to programmers
 #define SIGNATURE_0		0x1E
 #define SIGNATURE_1		0x55
 #define SIGNATURE_2		0xAA
@@ -37,16 +47,6 @@
 #define RAM_SIZE (uint32_t)0x0000A000
 #endif
 #define PROGFLASH_SIZE = EEPROM_START - PROGFLASH_START - 1
-
-// Verify that the correct board is selected
-#if (!defined(STM32F103xB) && !defined(ARDUINO_BLUEPILL_F103C8)) && (!defined(STM32F303xC) && !defined(ARDUINO_BLACKPILL_F303CC))
-  #error "Board must be 'Generic STM32F1 series -> BluePill F103C8 (128K)' or 'Generic STM32F3 series -> RobotDyn BlackPill F303CC'"
-#endif
-
-// Verify that seiral support is disabled in the board menu
-#ifdef HAL_UART_MODULE_ENABLED
-  #error "Serial must be disabled in the Tools -> U(S)ART Support menu (in order to keep the binary under 8KB)."
-#endif
 
 void DisableInterrupts();
 
