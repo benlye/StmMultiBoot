@@ -48,4 +48,6 @@
   #error "Serial must be disabled in the Tools -> U(S)ART Support menu (in order to keep the binary under 8KB)."
 #endif
 
+void DisableInterrupts();
+
 #endif /* __STMMULTIBOOT_H */
