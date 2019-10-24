@@ -233,6 +233,8 @@ void FlashLoader()
 			}
 		}
 
+		HAL_FLASH_Unlock();
+
 		/* Get character from UART */
 		ch = GetChar();
 
@@ -329,23 +331,6 @@ void FlashLoader()
 		{
 			VerifyCommand();
 
-			// Unlock the flash
-			HAL_FLASH_Unlock();
-
-			// Structure for erasing flash pages
-			FLASH_EraseInitTypeDef EraseInitStruct;
-			uint32_t SectorError = 0;
-
-			// Clear the flash flags
-			__HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_EOP | FLASH_FLAG_WRPERR | FLASH_FLAG_PGERR);
-
-			// Configure the erase
-			EraseInitStruct.TypeErase = FLASH_TYPEERASE_PAGES;											// Erase pages (not a mass erase)
-			EraseInitStruct.PageAddress = (uint32_t)PROGFLASH_START;									// Start erase at the first page of program flash (preserve the bootloader and EEPROM pages)
-			EraseInitStruct.NbPages = uint32_t((EEPROM_START - PROGFLASH_START) / FLASH_PAGE_SIZE);		// Erase up to the EEPROM pages
-
-			// Do the erase
-			HAL_FLASHEx_Erase(&EraseInitStruct, &SectorError);
 		}
 		else if (ch == STK_LEAVE_PROGMODE)
 		{
@@ -381,13 +366,31 @@ void FlashLoader()
 			count /= 2;
 
 			// Offset the write by the program flash start address
-			memAddress = (uint8_t *)(address + PROGFLASH_START);
+			memAddress = (uint8_t *)(address + FLASH_START);
 
 			// Only write to addresses that are above the bootloader and below the EEPROM
 			if ((uint32_t)memAddress >= PROGFLASH_START && (uint32_t)memAddress < EEPROM_START)
 			{
 				// Read command terminator, start reply
 				VerifyCommand();
+
+				if (((uint32_t)memAddress & 0x000003FF) == 0)
+				{
+					// Clear the flash flags
+					__HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_EOP | FLASH_FLAG_WRPERR | FLASH_FLAG_PGERR);
+
+					// Structure for erasing flash pages
+					FLASH_EraseInitTypeDef EraseInitStruct;
+					uint32_t SectorError = 0;
+
+					// Configure the erase
+					EraseInitStruct.TypeErase = FLASH_TYPEERASE_PAGES;
+					EraseInitStruct.PageAddress = (uint32_t)memAddress;
+					EraseInitStruct.NbPages = 1;
+
+					// Do the erase
+					HAL_FLASHEx_Erase(&EraseInitStruct, &SectorError);
+				}
 
 				bufPtr = serialBuffer;
 				while (count)
@@ -411,7 +414,7 @@ void FlashLoader()
 			uint8_t *memAddress;
 
 			// Offset the read by the program flash start address
-			memAddress = (uint8_t *)(address + PROGFLASH_START);
+			memAddress = (uint8_t *)(address + FLASH_START);
 
 			xlen = GetChar();
 			length = GetChar() | (xlen << 8);

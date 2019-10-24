@@ -30,5 +30,13 @@
     <ClInclude Include="stk500.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="FlashLoader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="FlashLoader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>
