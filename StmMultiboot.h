@@ -25,18 +25,17 @@
 #error "Serial must be disabled in the Tools -> U(S)ART Support menu (in order to keep the binary under 8KB)."
 #endif
 
-// Bytes for the device signature we return to programmers
+// Bytes for the device signature we return to the radio - 0x1E55AA
 #define SIGNATURE_0		0x1E
 #define SIGNATURE_1		0x55
 #define SIGNATURE_2		0xAA
-#define SIGNATURE_3		0x97
-#define SIGNATURE_4		0x02
 
 // Version numbers
 #define OPTIBOOT_MAJVER 4
 #define OPTIBOOT_MINVER 7
 
 // Boundaries of program flash space, EEPROM space, and RAM - varies by MCU
+#define FLASH_START (uint32_t)0x08000000
 #define PROGFLASH_START (uint32_t)0x08002000
 #ifdef STM32F103xB
 #define EEPROM_START (uint32_t)0x0801F800

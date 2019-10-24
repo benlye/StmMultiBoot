@@ -23,9 +23,6 @@ uint8_t notSynced;
 // Counter for STK SYNC packets
 uint8_t syncCount;
 
-// Flag to indicate the active serial port(s); 0 = USART2 + USART3; 1 = USART1
-uint8_t usart1Active;
-
 /* Disables the hardware serial port inverter */
 /*
 static void DisableSerialInverter()
@@ -58,31 +55,21 @@ static void ToggleSerialInverter()
 }
 
 /*
- * Checks if USART1 has data to be read
+ * Checks if USART2 has data to be read
  * If there is data, read and return it; if not, return 0xFFFF
  */
-static uint16_t TestUsart(uint8_t port)
+static uint16_t TestUsart()
 {
-	USART_TypeDef* USART;
-
-	if (port == 1)
-	{
-		USART = USART1;
-	}
-	else
-	{
-		USART = USART2;
-	}
 #ifdef STM32F103xB
-	if (USART->SR & USART_SR_RXNE)
+	if (USART2->SR & USART_SR_RXNE)
 	{
-		return USART->DR;
+		return USART2->DR;
 	}
 #endif
 #ifdef STM32F303xC
-	if (USART->ISR & USART_ISR_RXNE)
+	if (USART2->ISR & USART_ISR_RXNE)
 	{
-		return USART->RDR;
+		return USART2->RDR;
 	}
 #endif
 	return 0xFFFF;
@@ -91,58 +78,38 @@ static uint16_t TestUsart(uint8_t port)
 /* Gets a character from serial */
 uint8_t GetChar()
 {
-	USART_TypeDef* USART;
-
-	if (usart1Active)
-	{
-		USART = USART1;
-	}
-	else
-	{
-		USART = USART2;
-	}
 #ifdef STM32F103xB
-	while ((USART->SR & USART_SR_RXNE) == 0)
+	while ((USART2->SR & USART_SR_RXNE) == 0)
 	{
 		// wait
 	}
-	return USART->DR;
+	return USART2->DR;
 #endif
 #ifdef STM32F303xC
-	while ((USART->ISR & USART_ISR_RXNE) == 0)
+	while ((USART2->ISR & USART_ISR_RXNE) == 0)
 	{
 		// wait
 	}
-	return USART->RDR;
+	return USART2->RDR;
 #endif
 }
 
 /* Sends a character to the serial device */
 void PutChar(uint8_t byte)
 {
-	USART_TypeDef* USART;
-
-	if (usart1Active)
-	{
-		USART = USART1;
-	}
-	else
-	{
-		USART = USART3;
-	}
 #ifdef STM32F103xB
-	while ((USART->SR & USART_SR_TXE) == 0)
+	while ((USART3->SR & USART_SR_TXE) == 0)
 	{
 		// wait
 	}
-	USART->DR = byte;
+	USART3->DR = byte;
 #endif
 #ifdef STM32F303xC
-	while ((USART->ISR & USART_ISR_TXE) == 0)
+	while ((USART3->ISR & USART_ISR_TXE) == 0)
 	{
 		// wait
 	}
-	USART->RDR = byte;
+	USART3->RDR = byte;
 #endif
 }
 
@@ -203,30 +170,13 @@ void FlashLoader()
 			uint16_t data;
 
 			// Check for serial data on USART2
-			// data = TestUsart2();
-			data = TestUsart(2);
+			data = TestUsart();
 			if (data != 0xFFFF)
 			{
 				ch = data;
 				if ((lastCh == STK_GET_SYNC) && (ch == CRC_EOP))
 				{
 					notSynced = 0;
-					usart1Active = 0;
-					break;
-				}
-				lastCh = ch;
-			}
-
-			// Check for serial data on USART1
-			// data = TestUsart1();
-			data = TestUsart(1);
-			if (data != 0xFFFF)
-			{
-				ch = data;
-				if ((lastCh == STK_GET_SYNC) && (ch == CRC_EOP))
-				{
-					notSynced = 0;
-					usart1Active = 1;
 					break;
 				}
 				lastCh = ch;
@@ -316,16 +266,8 @@ void FlashLoader()
 			// Return the signature
 			VerifyCommand();
 			PutChar(SIGNATURE_0);
-			if (usart1Active)
-			{
-				PutChar(SIGNATURE_3);
-				PutChar(SIGNATURE_4);
-			}
-			else
-			{
-				PutChar(SIGNATURE_1);
-				PutChar(SIGNATURE_2);
-			}
+			PutChar(SIGNATURE_1);
+			PutChar(SIGNATURE_2);
 		}
 		else if (ch == STK_ENTER_PROGMODE)
 		{
