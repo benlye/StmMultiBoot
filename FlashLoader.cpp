@@ -23,31 +23,7 @@ uint8_t notSynced;
 // Counter for STK SYNC packets
 uint8_t syncCount;
 
-/* Disables the hardware serial port inverter */
-/*
-static void DisableSerialInverter()
-{
-	// Set PB1 (HIGH)
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
-
-	// Clear PB3 (LOW)
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
-}
-*/
-
-/* Enables the hardware serial port inverter */
-/*
-static void EnableSerialInverter()
-{
-	// Set PB1 (HIGH)
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
-
-	// Set PB3 (HIGH)
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_SET);
-}
-*/
-
-/* Toggles the hardware serial port inverter */
+/* Toggles the hardware serial port inverter - inversion only applies to the serial TX pin */
 static void ToggleSerialInverter()
 {
 	// Toggle PB3
@@ -153,9 +129,6 @@ void FlashLoader()
 	// Last character from serial - used when checking for SYNC
 	uint8_t lastCh;
 
-	// Indicate if serial port is currently inverted
-	// uint8_t serialIsInverted = 0;
-
 	// Disable the interrupts
 	DisableInterrupts();
 
@@ -183,6 +156,7 @@ void FlashLoader()
 			}
 		}
 
+		// Unlock the flash
 		HAL_FLASH_Unlock();
 
 		/* Get character from UART */
@@ -199,20 +173,10 @@ void FlashLoader()
 		}
 
 		// Toggle serial port inversion if we get five STK_GET_SYNCs in a row
-		if (syncCount > 5)
+		// Repeating SYNCs indicates we are receiving serial data from the radio but the radio is not getting our responses, 
+		// so try inverting the TX data to see if that's what the radio expects
+		if (syncCount > 4)
 		{
-			/*
-			if (serialIsInverted == 1)
-			{
-				DisableSerialInverter();
-				serialIsInverted = 0;
-			}
-			else
-			{
-				EnableSerialInverter();
-				serialIsInverted = 1;
-			}
-			*/
 			ToggleSerialInverter();
 			syncCount = 0;
 		}
@@ -307,7 +271,13 @@ void FlashLoader()
 			count += 1;
 			count /= 2;
 
-			// Offset the write by the program flash start address
+			// If memAddress is 0 move it up to the start of program flash space - corrects the initial offset for uploads from AVRDUDE
+			if (memAddress == 0)
+			{
+				memAddress = (uint8_t*)(PROGFLASH_START - FLASH_START);
+			}
+
+			// Offset the write by the flash start address
 			memAddress = (uint8_t *)(address + FLASH_START);
 
 			// Only write to addresses that are above the bootloader and below the EEPROM
@@ -316,6 +286,7 @@ void FlashLoader()
 				// Read command terminator, start reply
 				VerifyCommand();
 
+				// Check if this is the start of the page; if so we'll erase it
 				if (((uint32_t)memAddress & 0x000003FF) == 0)
 				{
 					// Clear the flash flags
@@ -379,5 +350,3 @@ void FlashLoader()
 		PutChar(STK_OK);
 	}
 }
-
-
