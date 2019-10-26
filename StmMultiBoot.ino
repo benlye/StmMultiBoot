@@ -55,26 +55,6 @@ static void GPIO_Init()
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
 
-	// Configure PA9 as alternate function for USART1 (USART1_TX=PA9, USART1_RX=PA10 )
-	GPIO_InitStruct.Pin = GPIO_PIN_9;
-	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-	GPIO_InitStruct.Pull = GPIO_PULLUP;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
-#ifdef STM32F303xC
-	GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
-#endif
-	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-	// Configure PA10 as alternate function for USART1 (USART1_TX=PA9, USART1_RX=PA10 )
-	GPIO_InitStruct.Pin = GPIO_PIN_10;
-	GPIO_InitStruct.Mode = GPIO_MODE_AF_INPUT;
-	GPIO_InitStruct.Pull = GPIO_PULLUP;
-	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
-#ifdef STM32F303xC
-	GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
-#endif
-	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
 	// Configure PA3 as alternate function USART2_RX (USART2_TX=PA2, USART2_RX=PA3 - only RX (PA3) is used)
 	GPIO_InitStruct.Pin = GPIO_PIN_3;
 	GPIO_InitStruct.Mode = GPIO_MODE_AF_INPUT;
@@ -98,19 +78,52 @@ static void GPIO_Init()
 #if defined(STM32F103xB) && !defined(_DEBUG)
 	__HAL_AFIO_REMAP_SWJ_DISABLE();		// Disable JTAG and SWD
 #endif
+
+}
+
+/* Deinitializes the GPIO pins for inputs, outputs, and USARTs */
+static void GPIO_DeInit()
+{
+	// Need to reconfigure PB10 before we de-init otherwise the multi firmware doesn't work properly
+	GPIO_InitTypeDef GPIO_InitStruct;
+	GPIO_InitStruct.Pin = GPIO_PIN_10;
+	GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+	GPIO_InitStruct.Pull = GPIO_PULLUP;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
+#ifdef STM32F303xC
+	GPIO_InitStruct.Alternate = GPIO_AF_NONE;
+#endif
+	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+	// De-init all the pins
+	HAL_GPIO_DeInit(GPIOA, GPIO_PIN_0);		// Bind button
+	HAL_GPIO_DeInit(GPIOA, GPIO_PIN_1);		// Red LED
+	HAL_GPIO_DeInit(GPIOA, GPIO_PIN_2);		// Green LED
+	HAL_GPIO_DeInit(GPIOA, GPIO_PIN_3);		// USART3_RX
+	HAL_GPIO_DeInit(GPIOA, GPIO_PIN_4);		// Rotary switch
+	HAL_GPIO_DeInit(GPIOA, GPIO_PIN_5);		// Rotary switch
+	HAL_GPIO_DeInit(GPIOA, GPIO_PIN_6);		// Rotary switch
+	HAL_GPIO_DeInit(GPIOA, GPIO_PIN_7);		// Rotary switch
+	HAL_GPIO_DeInit(GPIOB, GPIO_PIN_1);		// Serial inverter
+	HAL_GPIO_DeInit(GPIOB, GPIO_PIN_3);		// Serial inverter
+	HAL_GPIO_DeInit(GPIOB, GPIO_PIN_10);	// USART3_TX
+
+	// Disable the GPIO clocks
+	__HAL_RCC_GPIOA_CLK_DISABLE();
+	__HAL_RCC_GPIOB_CLK_DISABLE();
+#ifdef __HAL_RCC_AFIO_CLK_DISABLE
+	__HAL_RCC_AFIO_CLK_DISABLE();		// The AFIO clock only exists on the F103
+#endif
 }
 
 /* Initializes the serial ports */
 static void Serial_Init()
 {
 	// Enable the clocks
-	__HAL_RCC_USART1_CLK_ENABLE();
 	__HAL_RCC_USART2_CLK_ENABLE();
 	__HAL_RCC_USART3_CLK_ENABLE();
 
 	// Set the baud rates and configure the ports
-	USART1->BRR = 72000000 / 57600;
-	USART1->CR1 = 0x200C;
 	USART2->BRR = 36000000 / 57600;
 	USART2->CR1 = 0x200C;
 	USART2->CR2 = 0;
@@ -119,6 +132,20 @@ static void Serial_Init()
 	USART3->CR1 = 0x200C;
 	USART3->CR2 = 0;
 	USART3->CR3 = 0;
+}
+
+/* Deinitializes the serial ports */
+static void Serial_DeInit()
+{
+	// De-initialize USART2
+	__HAL_RCC_USART2_FORCE_RESET();
+	__HAL_RCC_USART2_RELEASE_RESET();
+	__HAL_RCC_USART2_CLK_DISABLE();
+
+	// De-initialize USART3
+	__HAL_RCC_USART3_FORCE_RESET();
+	__HAL_RCC_USART3_RELEASE_RESET();
+	__HAL_RCC_USART3_CLK_DISABLE();
 }
 
 /*
@@ -135,6 +162,14 @@ static void Timer_Init()
 	TIM2->DIER = TIM_DIER_UIE;		// Update interrupt enable
 	TIM2->CR1 |= TIM_CR1_CEN;		// Enable the timer
 	HAL_NVIC_EnableIRQ(TIM2_IRQn);	// Enable interrupts from TIM2
+}
+
+/* Deinitializes Timer 2 */
+static void Timer_DeInit()
+{
+	HAL_NVIC_DisableIRQ(TIM2_IRQn);	// Disable interrupts
+	TIM2->CR1 &= ~TIM_CR1_CEN;		// Disable the timer
+	__HAL_RCC_TIM2_CLK_DISABLE();	// Stop the clock
 }
 
 /*
@@ -208,6 +243,67 @@ void DisableInterrupts()
 	SysTick->CTRL = 0;
 }
 
+/* Reads a value from power backup register */
+uint32_t BackupRegisterRead(uint32_t BackupRegister) {
+	uint32_t data;
+	RTC_HandleTypeDef RtcHandle;
+	RtcHandle.Instance = RTC;
+	HAL_PWR_EnableBkUpAccess();
+	data = HAL_RTCEx_BKUPRead(&RtcHandle, BackupRegister);
+	HAL_PWR_DisableBkUpAccess();
+	return data;
+}
+
+/* Writes a value to power backup register */
+void BackupRegisterWrite(uint32_t BackupRegister, uint32_t data) {
+	RTC_HandleTypeDef RtcHandle;
+	RtcHandle.Instance = RTC;
+	HAL_PWR_EnableBkUpAccess();
+	HAL_RTCEx_BKUPWrite(&RtcHandle, BackupRegister, data);
+	HAL_PWR_DisableBkUpAccess();
+}
+
+/*
+ * Checks the flag in the backup register to see what state we're in and then clears it
+ *  - A power on reset returns 0
+ *  - A soft reset returns:
+ *    - 1 if RTC_BOOTLOADER_FLAG (should stay in bootloader)
+ *    - 2 if RTC_BOOTLOADER_JUST_UPLOADED (app was just uploaded from bootloader)
+ *    - 3 if RTC_BOOTLOADER_APP_RUNNING (app was just launched from bootloader)
+ *    - 0 otherwise
+*/
+uint32_t CheckAndClearBootloaderFlag()
+{
+	uint32_t flag = 0;
+	uint16_t dr10;
+
+	dr10 = BackupRegisterRead(RTC_BKP_DR10);
+
+	if (SoftwareResetReason())	// soft reset
+	{
+		switch (dr10)
+		{
+		case RTC_BOOTLOADER_FLAG:
+			flag = 0x01;
+			break;
+		case RTC_BOOTLOADER_JUST_UPLOADED:
+			flag = 0x02;
+			break;
+		case RTC_BOOTLOADER_APP_RUNNING:
+			flag = 0x03;
+			break;
+		}
+	}
+
+	if (dr10 != 0)
+	{
+		// Clear the backup register flag
+		BackupRegisterWrite(RTC_BKP_DR10, 0);
+	}
+
+	return flag;
+}
+
 /* Checks for a valid pointer at the beginning of the application flash space */
 uint8_t CheckForApplication(void)
 {
@@ -223,15 +319,25 @@ void JumpToApplication(void)
 	uint32_t jumpAddress = *(__IO uint32_t*)(PROGFLASH_START + 4);
 	pFunction Jump = (pFunction)jumpAddress;
 
+	// Disable serial
+	Serial_DeInit();
+
+	// Disable the timer
+	Timer_DeInit();
+
+	//De-init GPIO
+	GPIO_DeInit();
+
 	// Disable the interrupts
+	__disable_irq();
 	DisableInterrupts();
 
 	// Disable the clocks
 	RCC->APB1ENR &= ~RCC_APB1ENR_USART2EN;
 	RCC->APB1ENR &= ~RCC_APB1ENR_USART3EN;
 
-	// Disable the timer
-	TIM2->CR1 &= ~TIM_CR1_CEN;
+	// Set the backup register flag to say the app was launched
+	// BackupRegisterWrite(RTC_BKP_DR10, RTC_BOOTLOADER_APP_RUNNING);
 
 	// Clear any interrupts
 	NVIC->ICER[0] = 0xFFFFFFFF;
@@ -241,7 +347,7 @@ void JumpToApplication(void)
 	NVIC->ICPR[1] = 0xFFFFFFFF;
 	NVIC->ICPR[2] = 0xFFFFFFFF;
 
-	//HAL_RCC_DeInit();
+	HAL_RCC_DeInit();
 	HAL_DeInit();
 
 	SysTick->CTRL = 0;
@@ -252,7 +358,7 @@ void JumpToApplication(void)
 	SCB->VTOR = PROGFLASH_START;
 
 	// Jump to the application code
-	//__set_MSP(*(__IO uint32_t*)PROGFLASH_START);
+	__set_MSP(*(__IO uint32_t*)PROGFLASH_START);
 	Jump();
 }
 
@@ -273,6 +379,14 @@ void setup()
 
 void loop()
 {
+	// Get the bootloader flag
+	// uint32_t flag = CheckAndClearBootloaderFlag();
+
+	// Brief delay before we check the bind button - need a delay of at least 50ms otherwise the bind button check is wrong
+	HAL_Delay(500);
+
+	// TO DO - check for STK500 SYNC packets to see if we should go straight into the flash loader
+
 	// If reset by software, or powered up with protocol 0 and the bind button pressed, or there's not application, go straight into the bootloader, otherwise run the app
 	if (SoftwareResetReason() || CheckForBindButton() || !CheckForApplication())
 	{

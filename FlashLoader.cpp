@@ -136,6 +136,8 @@ void FlashLoader()
 	syncCount = 0;
 	lastCh = 0;
 
+	uint32_t addressOffset = 0;
+
 	for (;; )
 	{
 		while (notSynced)
@@ -244,6 +246,9 @@ void FlashLoader()
 
 			// Lock the flash
 			HAL_FLASH_Lock();
+
+			// Set the backup register flag to say firmware was just uploaded
+			// BackupRegisterWrite(RTC_BKP_DR10, RTC_BOOTLOADER_JUST_UPLOADED);
 		}
 		else if (ch == STK_PROG_PAGE)
 		{
@@ -271,14 +276,14 @@ void FlashLoader()
 			count += 1;
 			count /= 2;
 
-			// If memAddress is 0 move it up to the start of program flash space - corrects the initial offset for uploads from AVRDUDE
-			if (memAddress == 0)
+			// If address is 0 move it up to the start of program flash space - corrects the initial offset for uploads from AVRDUDE
+			if (address == 0)
 			{
-				memAddress = (uint8_t*)(PROGFLASH_START - FLASH_START);
+				addressOffset = (uint32_t)(PROGFLASH_START - FLASH_START);
 			}
 
 			// Offset the write by the flash start address
-			memAddress = (uint8_t *)(address + FLASH_START);
+			memAddress = (uint8_t *)(address + FLASH_START + addressOffset);
 
 			// Only write to addresses that are above the bootloader and below the EEPROM
 			if ((uint32_t)memAddress >= PROGFLASH_START && (uint32_t)memAddress < EEPROM_START)
@@ -326,8 +331,14 @@ void FlashLoader()
 			uint8_t xlen;
 			uint8_t *memAddress;
 
+			// If address is 0 move it up to the start of program flash space - corrects the initial offset for uploads from AVRDUDE
+			if (address == 0)
+			{
+				addressOffset = (uint32_t)(PROGFLASH_START - FLASH_START);
+			}
+
 			// Offset the read by the program flash start address
-			memAddress = (uint8_t *)(address + FLASH_START);
+			memAddress = (uint8_t *)(address + FLASH_START + addressOffset);
 
 			xlen = GetChar();
 			length = GetChar() | (xlen << 8);
