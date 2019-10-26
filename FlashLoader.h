@@ -20,5 +20,6 @@
 #include "StmMultiBoot.h"
 
 void FlashLoader();
+uint16_t TestUsart();
 
 #endif

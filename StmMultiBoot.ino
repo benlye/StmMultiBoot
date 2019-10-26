@@ -16,6 +16,8 @@
 #include "stk500.h"
 #include "FlashLoader.h"
 
+uint16_t softwareReset;
+
 /* Initializes the GPIO pins for inputs, outputs, and USARTs */
 static void GPIO_Init()
 {
@@ -201,11 +203,14 @@ static uint32_t CheckForBindButton()
 /* Returns 1 if the device was reset via a software request, 0 for any other reset reason */
 static uint32_t SoftwareResetReason()
 {
+	// Get the reset reason
+	uint32_t ResetReason = RCC->CSR;
+
 	// Clear the reset flag
 	RCC->CSR |= RCC_CSR_RMVF;
 
 	// Return 1 for a software reset, otherwise 0
-	return (RCC->CSR & RCC_CSR_SFTRSTF) ? 1 : 0;
+	return (ResetReason & RCC_CSR_SFTRSTF) ? 1 : 0;
 }
 
 /* Disables interrupts */
@@ -243,67 +248,6 @@ void DisableInterrupts()
 	SysTick->CTRL = 0;
 }
 
-/* Reads a value from power backup register */
-uint32_t BackupRegisterRead(uint32_t BackupRegister) {
-	uint32_t data;
-	RTC_HandleTypeDef RtcHandle;
-	RtcHandle.Instance = RTC;
-	HAL_PWR_EnableBkUpAccess();
-	data = HAL_RTCEx_BKUPRead(&RtcHandle, BackupRegister);
-	HAL_PWR_DisableBkUpAccess();
-	return data;
-}
-
-/* Writes a value to power backup register */
-void BackupRegisterWrite(uint32_t BackupRegister, uint32_t data) {
-	RTC_HandleTypeDef RtcHandle;
-	RtcHandle.Instance = RTC;
-	HAL_PWR_EnableBkUpAccess();
-	HAL_RTCEx_BKUPWrite(&RtcHandle, BackupRegister, data);
-	HAL_PWR_DisableBkUpAccess();
-}
-
-/*
- * Checks the flag in the backup register to see what state we're in and then clears it
- *  - A power on reset returns 0
- *  - A soft reset returns:
- *    - 1 if RTC_BOOTLOADER_FLAG (should stay in bootloader)
- *    - 2 if RTC_BOOTLOADER_JUST_UPLOADED (app was just uploaded from bootloader)
- *    - 3 if RTC_BOOTLOADER_APP_RUNNING (app was just launched from bootloader)
- *    - 0 otherwise
-*/
-uint32_t CheckAndClearBootloaderFlag()
-{
-	uint32_t flag = 0;
-	uint16_t dr10;
-
-	dr10 = BackupRegisterRead(RTC_BKP_DR10);
-
-	if (SoftwareResetReason())	// soft reset
-	{
-		switch (dr10)
-		{
-		case RTC_BOOTLOADER_FLAG:
-			flag = 0x01;
-			break;
-		case RTC_BOOTLOADER_JUST_UPLOADED:
-			flag = 0x02;
-			break;
-		case RTC_BOOTLOADER_APP_RUNNING:
-			flag = 0x03;
-			break;
-		}
-	}
-
-	if (dr10 != 0)
-	{
-		// Clear the backup register flag
-		BackupRegisterWrite(RTC_BKP_DR10, 0);
-	}
-
-	return flag;
-}
-
 /* Checks for a valid pointer at the beginning of the application flash space */
 uint8_t CheckForApplication(void)
 {
@@ -335,9 +279,6 @@ void JumpToApplication(void)
 	// Disable the clocks
 	RCC->APB1ENR &= ~RCC_APB1ENR_USART2EN;
 	RCC->APB1ENR &= ~RCC_APB1ENR_USART3EN;
-
-	// Set the backup register flag to say the app was launched
-	// BackupRegisterWrite(RTC_BKP_DR10, RTC_BOOTLOADER_APP_RUNNING);
 
 	// Clear any interrupts
 	NVIC->ICER[0] = 0xFFFFFFFF;
@@ -379,16 +320,21 @@ void setup()
 
 void loop()
 {
-	// Get the bootloader flag
-	// uint32_t flag = CheckAndClearBootloaderFlag();
-
 	// Brief delay before we check the bind button - need a delay of at least 50ms otherwise the bind button check is wrong
-	HAL_Delay(500);
+ 	HAL_Delay(500);
 
 	// TO DO - check for STK500 SYNC packets to see if we should go straight into the flash loader
+	uint8_t syncPacketReceived = 0;
+	/*
+	if (TestUsart() != 0xFFFF)
+	{
+		syncPacketReceived = 1;
+	}
 
+	uint16_t t = softwareReset;
+	*/
 	// If reset by software, or powered up with protocol 0 and the bind button pressed, or there's not application, go straight into the bootloader, otherwise run the app
-	if (SoftwareResetReason() || CheckForBindButton() || !CheckForApplication())
+	if (SoftwareResetReason() || CheckForBindButton() || !CheckForApplication()  || syncPacketReceived)
 	{
 		// Run the main bootloader routine
 		FlashLoader();

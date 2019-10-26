@@ -34,7 +34,7 @@ static void ToggleSerialInverter()
  * Checks if USART2 has data to be read
  * If there is data, read and return it; if not, return 0xFFFF
  */
-static uint16_t TestUsart()
+uint16_t TestUsart()
 {
 #ifdef STM32F103xB
 	if (USART2->SR & USART_SR_RXNE)
