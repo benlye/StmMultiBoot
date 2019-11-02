@@ -247,8 +247,8 @@ void FlashLoader()
 			// Lock the flash
 			HAL_FLASH_Lock();
 
-			// Set the backup register flag to say firmware was just uploaded
-			// BackupRegisterWrite(RTC_BKP_DR10, RTC_BOOTLOADER_JUST_UPLOADED);
+			// Jump to the application
+			JumpToApplication();
 		}
 		else if (ch == STK_PROG_PAGE)
 		{

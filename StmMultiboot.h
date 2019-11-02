@@ -53,6 +53,6 @@
 #define PROGFLASH_SIZE = EEPROM_START - PROGFLASH_START - 1
 
 void DisableInterrupts();
-void BackupRegisterWrite(uint32_t BackupRegister, uint32_t data);
+void JumpToApplication();
 
 #endif /* __STMMULTIBOOT_H */

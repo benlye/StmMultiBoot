@@ -16,8 +16,6 @@
 #include "stk500.h"
 #include "FlashLoader.h"
 
-uint16_t softwareReset;
-
 /* Initializes the GPIO pins for inputs, outputs, and USARTs */
 static void GPIO_Init()
 {
@@ -29,7 +27,7 @@ static void GPIO_Init()
 	__HAL_RCC_GPIOB_CLK_ENABLE();
 
 #ifdef __HAL_RCC_AFIO_CLK_ENABLE
-	__HAL_RCC_AFIO_CLK_ENABLE();		// The AFIO clock only exists on the F103
+	__HAL_RCC_AFIO_CLK_ENABLE();	// The AFIO clock only exists on the F103
 #endif
 
 	// Set PA0, 4-7 (HIGH)
@@ -53,8 +51,8 @@ static void GPIO_Init()
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
 	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-	// Start with the serial inverter disabled - set PB1 and clear PB3 
-	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
+	// Start with the serial inverter disabled
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
 
 	// Configure PA3 as alternate function USART2_RX (USART2_TX=PA2, USART2_RX=PA3 - only RX (PA3) is used)
@@ -101,13 +99,13 @@ static void GPIO_DeInit()
 	HAL_GPIO_DeInit(GPIOA, GPIO_PIN_0);		// Bind button
 	HAL_GPIO_DeInit(GPIOA, GPIO_PIN_1);		// Red LED
 	HAL_GPIO_DeInit(GPIOA, GPIO_PIN_2);		// Green LED
-	HAL_GPIO_DeInit(GPIOA, GPIO_PIN_3);		// USART3_RX
+	HAL_GPIO_DeInit(GPIOA, GPIO_PIN_3);		// USART2_RX
 	HAL_GPIO_DeInit(GPIOA, GPIO_PIN_4);		// Rotary switch
 	HAL_GPIO_DeInit(GPIOA, GPIO_PIN_5);		// Rotary switch
 	HAL_GPIO_DeInit(GPIOA, GPIO_PIN_6);		// Rotary switch
 	HAL_GPIO_DeInit(GPIOA, GPIO_PIN_7);		// Rotary switch
-	HAL_GPIO_DeInit(GPIOB, GPIO_PIN_1);		// Serial inverter
-	HAL_GPIO_DeInit(GPIOB, GPIO_PIN_3);		// Serial inverter
+	HAL_GPIO_DeInit(GPIOB, GPIO_PIN_1);		// Serial inverter, RX pin
+	HAL_GPIO_DeInit(GPIOB, GPIO_PIN_3);		// Serial inverter, TX pin
 	HAL_GPIO_DeInit(GPIOB, GPIO_PIN_10);	// USART3_TX
 
 	// Disable the GPIO clocks
@@ -320,21 +318,17 @@ void setup()
 
 void loop()
 {
-	// Brief delay before we check the bind button - need a delay of at least 50ms otherwise the bind button check is wrong
+	// Brief delay - need a delay of at least 50ms otherwise the bind button check is wrong - 500ms makes the LED look good
  	HAL_Delay(500);
-
-	// TO DO - check for STK500 SYNC packets to see if we should go straight into the flash loader
-	uint8_t syncPacketReceived = 0;
+	
 	/*
-	if (TestUsart() != 0xFFFF)
-	{
-		syncPacketReceived = 1;
-	}
-
-	uint16_t t = softwareReset;
-	*/
-	// If reset by software, or powered up with protocol 0 and the bind button pressed, or there's not application, go straight into the bootloader, otherwise run the app
-	if (SoftwareResetReason() || CheckForBindButton() || !CheckForApplication()  || syncPacketReceived)
+	 * Check if we should go straight into the flash loader 
+	 * Reasons to go into the flash loader:
+	 *   - Reset by software - Multimodule firmware triggers a software reset if CHECK_FOR_BOOTLOADER is enabled and the radio is trying to flash firmware to the module
+	 *   - The rotary selector is at 0 and the bind button is being pressed
+	 *   - There is no application at the start of the application space (0x8002000)
+	 */
+	if (SoftwareResetReason() || CheckForBindButton() || !CheckForApplication())
 	{
 		// Run the main bootloader routine
 		FlashLoader();
