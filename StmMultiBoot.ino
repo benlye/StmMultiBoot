@@ -16,9 +16,6 @@
 #include "stk500.h"
 #include "FlashLoader.h"
 
- // Flag to indicate STK sync status
-uint8_t syncPacketReceived = 0;
-
 /* Initializes the GPIO pins for inputs, outputs, and USARTs */
 static void GPIO_Init()
 {
@@ -324,29 +321,6 @@ void loop()
 	// Brief delay - need a delay of at least 50ms otherwise the bind button check is wrong - 500ms makes the LED look good
  	HAL_Delay(500);
 	
-	uint32_t currMillis = millis();
-	uint32_t initMillis = currMillis;
-	uint16_t lastChar = 0;
-
-	while (!syncPacketReceived && (currMillis - initMillis) <= 500)
-	{
-		uint16_t serialData = TestUsart();
-
-		if (serialData != 0xFFFF)
-		{
-			uint16_t serialChar = serialData;
-
-			if ((serialChar == CRC_EOP) && (lastChar == STK_GET_SYNC))
-			{
-				syncPacketReceived = 1;
-			}
-
-			lastChar = serialChar;
-		}
-
-		currMillis = millis();
-	}
-
 	/*
 	 * Check if we should go straight into the flash loader 
 	 * Reasons to go into the flash loader:
@@ -354,7 +328,7 @@ void loop()
 	 *   - The rotary selector is at 0 and the bind button is being pressed
 	 *   - There is no application at the start of the application space (0x8002000)
 	 */
-	if (SoftwareResetReason() || CheckForBindButton() || !CheckForApplication()) // || syncPacketReceived)
+	if (SoftwareResetReason() || CheckForBindButton() || !CheckForApplication())
 	{
 		// Run the main bootloader routine
 		FlashLoader();
