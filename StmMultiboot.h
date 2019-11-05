@@ -34,21 +34,20 @@
 #define OPTIBOOT_MAJVER 4
 #define OPTIBOOT_MINVER 7
 
-// Value to place in RTC backup register 10 for persistent bootloader mode
-#define RTC_BOOTLOADER_FLAG				0x424C
-#define RTC_BOOTLOADER_JUST_UPLOADED	0x424D
-#define RTC_BOOTLOADER_APP_RUNNING		0x4252
-
 // Boundaries of program flash space, EEPROM space, and RAM - varies by MCU
 #define FLASH_START (uint32_t)0x08000000
 #define PROGFLASH_START (uint32_t)0x08002000
+#define RAM_START SRAM_BASE
+
 #ifdef STM32F103xB
 #define EEPROM_START (uint32_t)0x0801F800
 #define RAM_SIZE (uint32_t)0x00005000
+#define PAGE_END 0x000003FF
 #endif
 #ifdef STM32F303xC
 #define EEPROM_START (uint32_t)0x0803F800
 #define RAM_SIZE (uint32_t)0x0000A000
+#define PAGE_END 0x000007FF
 #endif
 #define PROGFLASH_SIZE = EEPROM_START - PROGFLASH_START - 1
 

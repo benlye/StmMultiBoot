@@ -85,7 +85,7 @@ void PutChar(uint8_t byte)
 	{
 		// wait
 	}
-	USART3->RDR = byte;
+	USART3->TDR = byte;
 #endif
 }
 
@@ -292,7 +292,7 @@ void FlashLoader()
 				VerifyCommand();
 
 				// Check if this is the start of the page; if so we'll erase it
-				if (((uint32_t)memAddress & 0x000003FF) == 0)
+				if (((uint32_t)memAddress & PAGE_END) == 0)
 				{
 					// Clear the flash flags
 					__HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_EOP | FLASH_FLAG_WRPERR | FLASH_FLAG_PGERR);

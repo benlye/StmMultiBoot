@@ -1,0 +1,4 @@
+# StmMultiBoot build property overrides
+#
+
+build.openocdscript=target/stm32f3x.cfg 

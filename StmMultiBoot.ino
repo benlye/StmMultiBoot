@@ -57,11 +57,13 @@ static void GPIO_Init()
 
 	// Configure PA3 as alternate function USART2_RX (USART2_TX=PA2, USART2_RX=PA3 - only RX (PA3) is used)
 	GPIO_InitStruct.Pin = GPIO_PIN_3;
-	GPIO_InitStruct.Mode = GPIO_MODE_AF_INPUT;
+	GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
 	GPIO_InitStruct.Pull = GPIO_PULLUP;
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_MEDIUM;
 #ifdef STM32F303xC
 	GPIO_InitStruct.Alternate = GPIO_AF7_USART2;
+#else
+	GPIO_InitStruct.Mode = GPIO_MODE_AF_INPUT;
 #endif
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
@@ -78,7 +80,6 @@ static void GPIO_Init()
 #if defined(STM32F103xB) && !defined(_DEBUG)
 	__HAL_AFIO_REMAP_SWJ_DISABLE();		// Disable JTAG and SWD
 #endif
-
 }
 
 /* Deinitializes the GPIO pins for inputs, outputs, and USARTs */
@@ -125,11 +126,16 @@ static void Serial_Init()
 
 	// Set the baud rates and configure the ports
 	USART2->BRR = 36000000 / 57600;
-	USART2->CR1 = 0x200C;
+	USART2->CR1 |= USART_CR1_UE;	// USART Enable
+	USART2->CR1 |= USART_CR1_RE;	// Receiver Enable
+	//USART2->CR1 |= USART_CR1_TE;	// Transmitter Enable
 	USART2->CR2 = 0;
 	USART2->CR3 = 0;
+
 	USART3->BRR = 36000000 / 57600;
-	USART3->CR1 = 0x200C;
+	USART3->CR1 |= USART_CR1_UE;	// USART Enable
+	// USART3->CR1 |= USART_CR1_RE;	// Receiver Enable
+	USART3->CR1 |= USART_CR1_TE;	// Transmitter Enable
 	USART3->CR2 = 0;
 	USART3->CR3 = 0;
 }
@@ -138,14 +144,18 @@ static void Serial_Init()
 static void Serial_DeInit()
 {
 	// De-initialize USART2
+	//HAL_NVIC_DisableIRQ(USART2_IRQn);
+	//NVIC_ClearPendingIRQ(USART2_IRQn);
+	__HAL_RCC_USART2_CLK_DISABLE();
 	__HAL_RCC_USART2_FORCE_RESET();
 	__HAL_RCC_USART2_RELEASE_RESET();
-	__HAL_RCC_USART2_CLK_DISABLE();
 
 	// De-initialize USART3
+	//HAL_NVIC_DisableIRQ(USART3_IRQn);
+	//NVIC_ClearPendingIRQ(USART3_IRQn);
+	__HAL_RCC_USART3_CLK_DISABLE();
 	__HAL_RCC_USART3_FORCE_RESET();
 	__HAL_RCC_USART3_RELEASE_RESET();
-	__HAL_RCC_USART3_CLK_DISABLE();
 }
 
 /*
@@ -167,8 +177,10 @@ static void Timer_Init()
 /* Deinitializes Timer 2 */
 static void Timer_DeInit()
 {
-	HAL_NVIC_DisableIRQ(TIM2_IRQn);	// Disable interrupts
+	//HAL_NVIC_DisableIRQ(TIM2_IRQn);	// Disable interrupts
+	//NVIC_ClearPendingIRQ(TIM2_IRQn);
 	TIM2->CR1 &= ~TIM_CR1_CEN;		// Disable the timer
+	TIM2->SR &= ~(TIM_SR_UIF);		// Clear the interrupt
 	__HAL_RCC_TIM2_CLK_DISABLE();	// Stop the clock
 }
 
@@ -249,7 +261,7 @@ void DisableInterrupts()
 /* Checks for a valid pointer at the beginning of the application flash space */
 uint8_t CheckForApplication(void)
 {
-	return (((*(__IO uint32_t*)PROGFLASH_START) & ~(RAM_SIZE)) == 0x20000000) ? 1 : 0;
+	return (((*(uint32_t*)PROGFLASH_START) - RAM_START) <= RAM_SIZE) ? 1 : 0;
 }
 
 /* Jumps to the application */
@@ -270,21 +282,33 @@ void JumpToApplication(void)
 	//De-init GPIO
 	GPIO_DeInit();
 
-	// Disable the interrupts
-	__disable_irq();
-	DisableInterrupts();
-
 	// Disable the clocks
 	RCC->APB1ENR &= ~RCC_APB1ENR_USART2EN;
 	RCC->APB1ENR &= ~RCC_APB1ENR_USART3EN;
 
-	// Clear any interrupts
+	// Disable all interrupts
 	NVIC->ICER[0] = 0xFFFFFFFF;
 	NVIC->ICER[1] = 0xFFFFFFFF;
 	NVIC->ICER[2] = 0xFFFFFFFF;
+#ifdef STM32F303xC
+	NVIC->ICER[3] = 0xFFFFFFFF;
+	NVIC->ICER[4] = 0xFFFFFFFF;
+	NVIC->ICER[5] = 0xFFFFFFFF;
+	NVIC->ICER[6] = 0xFFFFFFFF;
+	NVIC->ICER[7] = 0xFFFFFFFF;
+#endif
+
+	// Clear any pending interrupts
 	NVIC->ICPR[0] = 0xFFFFFFFF;
 	NVIC->ICPR[1] = 0xFFFFFFFF;
 	NVIC->ICPR[2] = 0xFFFFFFFF;
+#ifdef STM32F303xC
+	NVIC->ICPR[3] = 0xFFFFFFFF;
+	NVIC->ICPR[4] = 0xFFFFFFFF;
+	NVIC->ICPR[5] = 0xFFFFFFFF;
+	NVIC->ICPR[6] = 0xFFFFFFFF;
+	NVIC->ICPR[7] = 0xFFFFFFFF;
+#endif
 
 	HAL_RCC_DeInit();
 	HAL_DeInit();
@@ -315,12 +339,11 @@ void setup()
 	// Initialize the timer
 	Timer_Init();
 }
-
 void loop()
 {
 	// Brief delay - need a delay of at least 50ms otherwise the bind button check is wrong - 500ms makes the LED look good
  	HAL_Delay(500);
-	
+
 	/*
 	 * Check if we should go straight into the flash loader 
 	 * Reasons to go into the flash loader:
